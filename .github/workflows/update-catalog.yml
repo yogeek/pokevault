@@ -1,0 +1,20 @@
+name: Update Pokémon catalog
+
+on:
+  schedule:
+    - cron: '0 4 1 * *'  # Premier du mois à 4h UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/update-catalog.mjs
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: update Pokémon TCG catalog'
+          file_pattern: 'public/catalog.json'
