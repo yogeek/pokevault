@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useShareStore } from '@/stores/share'
 import { useCatalogStore } from '@/stores/catalog'
 import { checkCard } from '@/lib/share'
+import { pinSharedView } from '@/db/sharing'
 import { TesseractRecognizer } from '@/lib/ocr'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
@@ -34,20 +35,31 @@ export function SharedViewPage() {
   const generatedAt = new Date(snap.g)
   const daysOld = Math.floor((Date.now() - generatedAt.getTime()) / 86_400_000)
 
+  async function handlePin() {
+    await pinSharedView({
+      ownerName: snap.n,
+      source: 'url-fragment',
+      generatedAt: snap.g,
+      snapshotJson: JSON.stringify(snap),
+    })
+    alert(`Collection de ${snap.n} épinglée !`)
+  }
+
   return (
     <SharedViewContent
       ownerName={snap.n}
       daysOld={daysOld}
       inventoryCount={snap.i.length}
       wishlistCount={snap.w.length}
+      onPin={handlePin}
     />
   )
 }
 
 function SharedViewContent({
-  ownerName, daysOld, inventoryCount, wishlistCount,
+  ownerName, daysOld, inventoryCount, wishlistCount, onPin,
 }: {
-  ownerName: string; daysOld: number; inventoryCount: number; wishlistCount: number
+  ownerName: string; daysOld: number; inventoryCount: number; wishlistCount: number; onPin: () => void
 }) {
   const [scanMode, setScanMode] = useState(false)
   const snap = useShareStore(s => s.activeSnapshot)!
@@ -111,6 +123,12 @@ function SharedViewContent({
             ⚠️ Snapshot vieux de {daysOld} jours — peut ne plus être à jour.
           </p>
         )}
+        <button
+          onClick={onPin}
+          className="text-xs text-brand-400 hover:underline"
+        >
+          📌 Épingler pour y accéder hors-ligne
+        </button>
       </div>
 
       {/* Scan mode toggle */}

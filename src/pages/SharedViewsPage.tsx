@@ -1,0 +1,108 @@
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useNavigate } from 'react-router-dom'
+import { unpinSharedView } from '@/db/sharing'
+import { useShareStore } from '@/stores/share'
+import { db } from '@/db'
+import { Spinner } from '@/components/ui/Spinner'
+
+export function SharedViewsPage() {
+  const navigate = useNavigate()
+  const loadFromJson = useShareStore(s => s.loadFromJson)
+
+  const views = useLiveQuery(() => db.sharedViews.orderBy('pinnedAt').reverse().toArray(), [])
+
+  function openView(snapshotJson: string) {
+    loadFromJson(snapshotJson)
+    navigate('/view')
+  }
+
+  return (
+    <div className="pb-24">
+      <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
+        <h1 className="text-xl font-bold">Collections reçues</h1>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Snapshots partagés par vos amis
+        </p>
+      </div>
+
+      {views === undefined && (
+        <div className="flex justify-center py-16"><Spinner /></div>
+      )}
+
+      {views?.length === 0 && (
+        <div className="flex flex-col items-center py-24 gap-3 text-center px-8">
+          <div className="text-5xl">🔗</div>
+          <h2 className="text-lg font-semibold">Aucune collection reçue</h2>
+          <p className="text-sm text-slate-400">
+            Quand un ami vous partage son lien, ouvrez-le et épinglez-le ici.
+          </p>
+        </div>
+      )}
+
+      <div className="divide-y divide-slate-800">
+        {views?.map(view => {
+          const daysOld = Math.floor(
+            (Date.now() - new Date(view.generatedAt).getTime()) / 86_400_000,
+          )
+          return (
+            <div key={view.id} className="px-4 py-4 flex items-center gap-4">
+              <button
+                onClick={() => openView(view.snapshotJson)}
+                className="flex-1 text-left space-y-0.5"
+              >
+                <p className="font-semibold">{view.ownerName}</p>
+                <p className="text-xs text-slate-400">
+                  Épinglé le {new Date(view.pinnedAt).toLocaleDateString('fr')}
+                  {' · '}
+                  <span className={daysOld >= 7 ? 'text-amber-400' : ''}>
+                    Snapshot vieux de {daysOld}j
+                  </span>
+                </p>
+              </button>
+
+              <button
+                onClick={() => openView(view.snapshotJson)}
+                className="bg-brand-500 text-white text-sm px-3 py-1.5 rounded-lg"
+              >
+                Scanner
+              </button>
+
+              <button
+                onClick={() => view.id != null && unpinSharedView(view.id)}
+                aria-label="Désépingler"
+                className="p-2 text-slate-500 hover:text-red-400"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Import from file */}
+      <div className="px-4 pt-6">
+        <button
+          onClick={() => {
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = '.pokevault-share,.json'
+            input.addEventListener('change', async (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0]
+              if (!file) return
+              const text = await file.text()
+              loadFromJson(text)
+              navigate('/view')
+            })
+            input.click()
+          }}
+          className="w-full border border-dashed border-slate-700 rounded-xl py-3 text-sm
+                     text-slate-400 hover:border-brand-500 hover:text-brand-400 transition-colors"
+        >
+          + Ouvrir un fichier .pokevault-share
+        </button>
+      </div>
+    </div>
+  )
+}
