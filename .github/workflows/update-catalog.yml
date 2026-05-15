@@ -6,7 +6,8 @@ on:
   workflow_dispatch:       # déclenchement manuel possible
 
 permissions:
-  contents: write          # nécessaire pour le commit auto
+  contents: write
+  actions: write           # nécessaire pour déclencher le workflow deploy
 
 jobs:
   update:
@@ -27,9 +28,16 @@ jobs:
       - name: Bump patch version
         run: npm version patch --no-git-tag-version
 
-      - uses: stefanzweifel/git-auto-commit-action@v5
+      - id: auto-commit
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'chore: mise à jour catalogue TCGdex'
           file_pattern: 'public/catalog.json package.json'
           commit_user_name: 'github-actions[bot]'
           commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Déclencher le redéploiement
+        if: steps.auto-commit.outputs.changes_detected == 'true'
+        run: gh workflow run deploy.yml --ref ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
