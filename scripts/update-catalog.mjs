@@ -82,8 +82,12 @@ async function main() {
 
       for (const card of frSet.cards) {
         const enCard = enById[card.localId]
-        // Prefer EN image (standard reference); fallback to FR image
         const imageBase = enCard?.image ?? card.image ?? ''
+        // TCGdex category: 'Pokemon' | 'Trainer' | 'Energy'
+        const category = enCard?.category ?? card.category ?? 'Pokemon'
+        const supertype = category === 'Trainer' ? 'Trainer'
+          : category === 'Energy' ? 'Energy'
+          : 'Pokémon'
         cards.push({
           id:        `${sr.id}-${card.localId}`,
           name:      enCard?.name ?? card.name,
@@ -93,9 +97,9 @@ async function main() {
           setNameFr: frSet.name,
           number:    card.localId,
           total:     frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
-          rarity:    '',
+          rarity:    enCard?.rarity ?? card.rarity ?? '',
           imageUrl:  imageBase ? `${imageBase}/high.webp` : '',
-          supertype: 'Pokémon',
+          supertype,
         })
       }
     }

@@ -20,33 +20,44 @@ export async function recognizeCardWithClaude(
   catalog: CatalogData,
 ): Promise<CatalogCard[]> {
   const imageData = toJpegBase64(canvas)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30_000)
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 100,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: imageData },
-          },
-          {
-            type: 'text',
-            text: 'Pokémon TCG card. Give the English Pokémon name and card number (X/Y format). JSON only, no explanation: {"name":"Pikachu","number":"58/102"}',
-          },
-        ],
-      }],
-    }),
-  })
+  let res: Response
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 100,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: imageData },
+            },
+            {
+              type: 'text',
+              text: 'Pokémon TCG card. Give the English Pokémon name and card number (X/Y format). JSON only, no explanation: {"name":"Pikachu","number":"58/102"}',
+            },
+          ],
+        }],
+      }),
+    })
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw new Error('Délai dépassé (>30s) — vérifiez votre connexion')
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
@@ -56,7 +67,8 @@ export async function recognizeCardWithClaude(
   const data = await res.json() as { content: { text: string }[] }
   const text = data.content[0]?.text ?? ''
 
-  const jsonMatch = text.match(/\{[^}]+\}/)
+  // Match outermost JSON object — handles any text Claude wraps around it
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error(`Réponse illisible : ${text.slice(0, 80)}`)
 
   const parsed = JSON.parse(jsonMatch[0]) as { name?: string; number?: string }

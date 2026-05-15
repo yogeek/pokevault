@@ -8,3 +8,5 @@ dist-ssr
 coverage
 playwright-report
 test-results
+tsconfig.app.tsbuildinfo
+public/tesseract/

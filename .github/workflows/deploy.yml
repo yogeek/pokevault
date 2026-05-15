@@ -2,7 +2,7 @@ name: Build & Deploy
 
 on:
   push:
-    branches: [main, claude/android-app-prd-1PFtR]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

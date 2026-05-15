@@ -5,7 +5,8 @@ import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
 import { checkCard } from '@/lib/share'
 import { pinSharedView } from '@/db/sharing'
-import { TesseractRecognizer } from '@/lib/ocr'
+import { recognizeCardWithClaude } from '@/lib/ai-scan'
+import { getSetting } from '@/db/settings'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
 
@@ -94,9 +95,18 @@ function SharedViewContent({
     setScanning(true)
     setScanResult(null)
     try {
-      const recognizer = new TesseractRecognizer(catalog)
-      const ocrResult = await recognizer.recognize(videoRef.current)
-      const detectedId = ocrResult.cardId ?? ocrResult.suggestions[0]?.id
+      const apiKey = await getSetting('aiApiKeyEnc') as string | undefined
+      if (!apiKey) {
+        setScanResult({ result: { type: 'unknown' } })
+        return
+      }
+      const video = videoRef.current
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      canvas.getContext('2d')!.drawImage(video, 0, 0)
+      const cards = await recognizeCardWithClaude(canvas, apiKey, catalog)
+      const detectedId = cards[0]?.id
       if (!detectedId) {
         setScanResult({ result: { type: 'unknown' } })
         return
@@ -104,6 +114,8 @@ function SharedViewContent({
       const result = checkCard(detectedId, snap)
       const card = catalog.cards.find(c => c.id === detectedId)
       setScanResult({ result, card })
+    } catch {
+      setScanResult({ result: { type: 'unknown' } })
     } finally {
       setScanning(false)
     }

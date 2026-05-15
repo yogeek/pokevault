@@ -20,10 +20,16 @@ export function ScanPage() {
   const [result, setResult] = useState<CatalogCard[]>([])
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
-  const [aiKey, setAiKey] = useState<string | null>(null)
+  // undefined = still loading from DB; null = loaded but not set; string = ready
+  const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
     getSetting('aiApiKeyEnc').then(k => setAiKey((k as string) || null))
+  }, [])
+
+  // Stop camera stream when component unmounts (e.g. user navigates away mid-scan)
+  useEffect(() => {
+    return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
   }, [])
 
   useEffect(() => {
@@ -38,6 +44,7 @@ export function ScanPage() {
 
   const runRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
     if (!catalog) return
+    if (aiKey === undefined) return  // still loading from DB
     if (!aiKey) {
       setError('no-api-key')
       setMode('error')
@@ -118,6 +125,7 @@ export function ScanPage() {
     setMode('idle')
   }, [])
 
+  const aiLoading = aiKey === undefined
   const aiConfigured = !!aiKey
 
   return (
@@ -153,7 +161,7 @@ export function ScanPage() {
 
       {mode === 'idle' && (
         <div className="flex flex-col items-center py-8 gap-5 px-6">
-          {!aiConfigured && (
+          {!aiLoading && !aiConfigured && (
             <button
               onClick={() => navigate('/settings')}
               className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3
