@@ -85,30 +85,29 @@ export function ScanPage() {
     fileInputRef.current?.click()
   }, [])
 
-  const handleImageFile = useCallback(async (e: Event) => {
-    const file = (e.target as HTMLInputElement).files?.[0]
+  const handleImageFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (!file || !catalog) return
-    ;(e.target as HTMLInputElement).value = ''  // allow re-picking the same file
+    e.target.value = '' // allow re-picking same file
 
-    const url = URL.createObjectURL(file)
-    setPreview(url)
+    // FileReader → data URL: no revocation needed, survives re-renders
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string
+      if (!dataUrl) return
+      setPreview(dataUrl)
 
-    const img = new Image()
-    img.onload = async () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-      canvas.getContext('2d')!.drawImage(img, 0, 0)
-      URL.revokeObjectURL(url)
-      await runOCR(canvas)
+      const img = new Image()
+      img.onload = async () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext('2d')!.drawImage(img, 0, 0)
+        await runOCR(canvas)
+      }
+      img.src = dataUrl
     }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      setPreview(null)
-      setError("Impossible de lire l'image.")
-      setMode('error')
-    }
-    img.src = url
+    reader.readAsDataURL(file)
   }, [catalog, runOCR])
 
   const reset = useCallback(() => {
@@ -126,7 +125,7 @@ export function ScanPage() {
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={handleImageFile as unknown as React.ChangeEventHandler<HTMLInputElement>}
+        onChange={handleImageFile}
       />
 
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
