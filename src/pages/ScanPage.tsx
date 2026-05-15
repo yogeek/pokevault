@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
+import { cardName } from '@/lib/catalog'
 import { TesseractRecognizer } from '@/lib/ocr'
 import { Spinner } from '@/components/ui/Spinner'
 import type { CatalogCard } from '@/types'
@@ -223,9 +224,9 @@ export function ScanPage() {
           {result.map(card => (
             <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`)}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
-              <img src={card.imageUrl} alt={card.name} className="w-12 h-17 object-cover rounded" />
+              <img src={card.imageUrl} alt={cardName(card)} className="w-12 h-17 object-cover rounded" />
               <div>
-                <p className="font-medium">{card.name}</p>
+                <p className="font-medium">{cardName(card)}</p>
                 <p className="text-xs text-slate-400">{card.setName} · #{card.number}</p>
               </div>
               <svg className="w-5 h-5 text-brand-500 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

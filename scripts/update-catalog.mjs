@@ -90,6 +90,7 @@ async function main() {
           nameFr:    card.name,
           setId:     sr.id,
           setName:   enSetName,
+          setNameFr: frSet.name,
           number:    card.localId,
           total:     frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
           rarity:    '',

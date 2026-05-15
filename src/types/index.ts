@@ -9,7 +9,8 @@ export interface CatalogCard {
   name: string       // English name
   nameFr?: string    // French name (ex. "Sulfura" for Moltres)
   setId: string
-  setName: string
+  setName: string    // English set name
+  setNameFr?: string // French set name
   number: string     // ex. "4"
   total: number      // ex. 102
   rarity: Rarity

@@ -1,4 +1,5 @@
 import type { CatalogCard } from '@/types'
+import { cardName } from '@/lib/catalog'
 
 interface Props {
   card: CatalogCard
@@ -17,7 +18,7 @@ export function CardThumbnail({ card, qty, className = '', onClick }: Props) {
     >
       <img
         src={card.imageUrl}
-        alt={card.name}
+        alt={cardName(card)}
         loading="lazy"
         className="w-full object-cover aspect-[2.5/3.5]"
         onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}

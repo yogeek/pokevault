@@ -27,27 +27,77 @@ export class TesseractRecognizer implements CardRecognizer {
 
   async recognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
     const { createWorker } = await import('tesseract.js')
-    const worker = await createWorker('eng')
+    // FR+EN reading — covers French cards natively
+    const worker = await createWorker(['fra', 'eng'])
     try {
-      const canvas = toCanvas(source)
-      const { data } = await worker.recognize(canvas)
-      const rawText = data.text
-      const confidence = data.confidence / 100
-      const suggestions = matchCard(this.catalog, rawText)
-      return { confidence, rawText, suggestions, cardId: suggestions[0]?.id }
+      const baseCanvas = toCanvas(source)
+
+      // Try multiple orientations; cards photographed in landscape need rotation.
+      // Early-exit on a confident result to save time (each OCR ~2-4s).
+      const orientations = [0, 90, 270, 180]
+      let best = { text: '', confidence: 0, score: -Infinity }
+
+      for (const rot of orientations) {
+        const c = rot === 0 ? baseCanvas : rotateCanvas(baseCanvas, rot)
+        const { data } = await worker.recognize(c)
+        const score = scoreOcr(data.text, data.confidence)
+        if (score > best.score) {
+          best = { text: data.text, confidence: data.confidence / 100, score }
+        }
+        if (score >= 80) break  // confident enough, stop trying rotations
+      }
+
+      const suggestions = matchCard(this.catalog, best.text)
+      return {
+        confidence: best.confidence,
+        rawText: best.text,
+        suggestions,
+        cardId: suggestions[0]?.id,
+      }
     } finally {
       await worker.terminate()
     }
   }
 }
 
-/**
- * Match strategy (card number is language-independent, so prioritized over name):
- * 1. Parse "X/Y" → find cards with number === X  (exact, not contains)
- *    → if total Y is known, keep only cards whose set has that many cards
- * 2. Parse words → score cards by longest common prefix with catalog name
- * 3. Merge: number matches first, then name matches, dedup, cap at 5
- */
+/** Heuristic OCR quality score: confidence + parseable signals */
+function scoreOcr(text: string, confidence: number): number {
+  let score = confidence // 0-100
+  // Bonus for finding "X/Y" card number pattern
+  if (/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(text)) score += 20
+  // Bonus for finding "HP" or "PV" (French)
+  if (/\b(HP|PV)\b/i.test(text)) score += 10
+  // Penalty for very short text
+  const wordCount = text.split(/\s+/).filter(w => w.length >= 3).length
+  if (wordCount < 3) score -= 30
+  return score
+}
+
+function rotateCanvas(canvas: HTMLCanvasElement, degrees: number): HTMLCanvasElement {
+  const rad = (degrees * Math.PI) / 180
+  const out = document.createElement('canvas')
+  if (degrees === 90 || degrees === 270) {
+    out.width = canvas.height
+    out.height = canvas.width
+  } else {
+    out.width = canvas.width
+    out.height = canvas.height
+  }
+  const ctx = out.getContext('2d')!
+  ctx.translate(out.width / 2, out.height / 2)
+  ctx.rotate(rad)
+  ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
+  return out
+}
+
+/** Common words to ignore when scoring name matches */
+const STOPWORDS = new Set([
+  'pokemon', 'pokémon', 'trainer', 'energy', 'basic', 'stage',
+  'attack', 'damage', 'point', 'points', 'turn', 'card', 'cards',
+  'this', 'your', 'that', 'with', 'from', 'when', 'each', 'them',
+  'cette', 'cartes', 'attaque', 'votre', 'pokè',
+])
+
 function matchCard(catalog: CatalogData, rawText: string): CatalogCard[] {
   const results: CatalogCard[] = []
   const seen = new Set<string>()
@@ -56,15 +106,14 @@ function matchCard(catalog: CatalogData, rawText: string): CatalogCard[] {
     if (!seen.has(card.id)) { seen.add(card.id); results.push(card) }
   }
 
-  // ── 1. Exact number match ──────────────────────────────────────────────────
+  // ── 1. Exact number match (X/Y pattern) ──────────────────────────────────
   const numMatch = rawText.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/)
   if (numMatch) {
-    const num = numMatch[1]          // e.g. "20"
-    const total = parseInt(numMatch[2], 10) // e.g. 82
+    const num = numMatch[1]
+    const total = parseInt(numMatch[2], 10)
 
     catalog.cards
       .filter(c => c.number === num)
-      // Prefer sets whose size is close to the scanned total
       .sort((a, b) => {
         const sizeA = catalog.cards.filter(x => x.setId === a.setId).length
         const sizeB = catalog.cards.filter(x => x.setId === b.setId).length
@@ -74,27 +123,29 @@ function matchCard(catalog: CatalogData, rawText: string): CatalogCard[] {
       .forEach(add)
   }
 
-  // ── 2. Name match (word-by-word, longest prefix wins) ─────────────────────
+  // ── 2. Name match — try both name (EN) and nameFr (FR) ────────────────────
   const words = rawText
     .split(/[\n\r\s,./\\()\[\]{}|_\-]+/)
     .map(w => w.replace(/[^a-zA-ZÀ-ÿ]/g, '').trim().toLowerCase())
-    .filter(w => w.length >= 4)
+    .filter(w => w.length >= 4 && !STOPWORDS.has(w))
 
   if (words.length > 0) {
     const scored = catalog.cards.map(card => {
-      const name = card.name.toLowerCase()
       let score = 0
-      for (const word of words) {
-        if (name === word) { score += 20; break }
-        if (name.startsWith(word) || word.startsWith(name)) { score += 10; break }
-        if (name.includes(word)) score += 3
+      const candidates = [card.name.toLowerCase(), card.nameFr?.toLowerCase()].filter(Boolean) as string[]
+      for (const name of candidates) {
+        for (const word of words) {
+          if (name === word) { score = Math.max(score, 30); break }
+          if (name.startsWith(word) || word.startsWith(name)) { score = Math.max(score, 15); break }
+          if (name.includes(word)) score = Math.max(score, 5)
+        }
       }
       return { card, score }
     })
     scored
       .filter(s => s.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
+      .slice(0, 5)
       .forEach(s => add(s.card))
   }
 

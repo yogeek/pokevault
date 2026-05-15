@@ -69,3 +69,8 @@ export function getSet(catalog: CatalogData, setId: string): CatalogSet | undefi
 export function getCardsBySet(catalog: CatalogData, setId: string): CatalogCard[] {
   return catalog.cards.filter(c => c.setId === setId)
 }
+
+/** Nom à afficher : FR si dispo, sinon EN */
+export function cardName(card: { name: string; nameFr?: string }): string {
+  return card.nameFr ?? card.name
+}

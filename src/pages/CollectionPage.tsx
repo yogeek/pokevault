@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
+import { cardName } from '@/lib/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
@@ -60,6 +61,7 @@ export function CollectionPage() {
         return (
           id.toLowerCase().includes(q) ||
           card?.name.toLowerCase().includes(q) ||
+          card?.nameFr?.toLowerCase().includes(q) ||
           card?.setName.toLowerCase().includes(q) ||
           card?.number.includes(q)
         )
@@ -284,7 +286,7 @@ export function CollectionPage() {
                 {card ? (
                   <img
                     src={card.imageUrl}
-                    alt={card.name}
+                    alt={cardName(card)}
                     className="w-10 h-14 object-cover rounded flex-shrink-0"
                     onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                   />
@@ -293,7 +295,7 @@ export function CollectionPage() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium truncate">{card?.name ?? cardId}</p>
+                    <p className="text-sm font-medium truncate">{card ? cardName(card) : cardId}</p>
                     {inWishlist && <span className="text-xs">🎁</span>}
                   </div>
                   <p className="text-xs text-slate-400 truncate">

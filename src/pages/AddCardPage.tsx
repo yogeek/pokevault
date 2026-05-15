@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
-import { searchCards } from '@/lib/catalog'
+import { searchCards, cardName } from '@/lib/catalog'
 import { addInventoryEntry } from '@/db/inventory'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
@@ -132,12 +132,12 @@ export function AddCardPage() {
               >
                 <img
                   src={card.imageUrl}
-                  alt={card.name}
+                  alt={cardName(card)}
                   className="w-10 h-14 object-cover rounded"
                   onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{card.name}</p>
+                  <p className="text-sm font-medium">{cardName(card)}</p>
                   <p className="text-xs text-slate-400 truncate">
                     {card.setName} · #{card.number} · {card.rarity}
                   </p>
@@ -161,12 +161,12 @@ export function AddCardPage() {
           <div className="flex items-center gap-4 bg-slate-800/50 rounded-2xl p-3">
             <img
               src={selected.imageUrl}
-              alt={selected.name}
+              alt={cardName(selected)}
               className="w-16 h-[88px] object-cover rounded-lg shadow"
               onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
             />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold truncate">{selected.name}</p>
+              <p className="font-semibold truncate">{cardName(selected)}</p>
               <p className="text-sm text-slate-400">{selected.setName}</p>
               <p className="text-xs text-slate-500">#{selected.number} · {selected.rarity}</p>
               <button

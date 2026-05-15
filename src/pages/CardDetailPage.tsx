@@ -5,6 +5,7 @@ import { db } from '@/db'
 import { deleteEntry, updateEntry } from '@/db/inventory'
 import { addToWishlist, removeFromWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
+import { cardName } from '@/lib/catalog'
 import { ConditionBadge, PriorityBadge } from '@/components/ui/Badge'
 import { Toast } from '@/components/ui/Toast'
 import type { Condition, InventoryEntry, WishlistEntry, WishlistPriority } from '@/types'
@@ -85,7 +86,7 @@ export function CardDetailPage() {
         </div>
         <img
           src={card.imageUrl}
-          alt={card.name}
+          alt={cardName(card)}
           className="w-48 shadow-2xl rounded-xl"
           onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
         />
@@ -108,7 +109,7 @@ export function CardDetailPage() {
       {/* Info */}
       <div className="px-4 py-4 space-y-1 border-b border-slate-800">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="text-2xl font-bold">{card.name}</h1>
+          <h1 className="text-2xl font-bold">{cardName(card)}</h1>
           {inWishlist && wishlistEntry && (
             <PriorityBadge priority={wishlistEntry.priority as WishlistPriority} />
           )}

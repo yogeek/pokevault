@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShareStore } from '@/stores/share'
 import { useCatalogStore } from '@/stores/catalog'
+import { cardName } from '@/lib/catalog'
 import { checkCard } from '@/lib/share'
 import { pinSharedView } from '@/db/sharing'
 import { TesseractRecognizer } from '@/lib/ocr'
@@ -214,9 +215,9 @@ function ScanResultCard({
       <div className="flex-1">
         {card && (
           <div className="flex items-center gap-2 mb-2">
-            <img src={card.imageUrl} alt={card.name} className="w-8 h-11 object-cover rounded" />
+            <img src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
             <div>
-              <p className="text-sm font-semibold">{card.name}</p>
+              <p className="text-sm font-semibold">{cardName(card)}</p>
               <p className="text-xs text-slate-400">{card.setName}</p>
             </div>
           </div>
