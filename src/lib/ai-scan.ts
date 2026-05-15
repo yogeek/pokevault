@@ -77,7 +77,7 @@ export async function recognizeCardWithClaude(
   const numOnly = rawNumber.split('/')[0]
 
   // Name match first
-  let results = name ? searchCards(catalog, name, 20) : []
+  let results = name ? searchCards(catalog, name, 5) : []
 
   // Narrow by number if present
   if (numOnly && results.length > 0) {

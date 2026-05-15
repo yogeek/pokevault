@@ -514,6 +514,9 @@ export function SettingsPage() {
               className="w-full bg-slate-800 rounded-xl px-3 py-2.5 text-sm font-mono
                          placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
+            <p className="text-xs text-amber-400/80 bg-amber-400/10 rounded-lg px-3 py-2">
+              Cette clé est stockée en clair sur cet appareil. Limitez son usage à PokeVault via les restrictions de la console Anthropic.
+            </p>
             <ActionBtn onClick={saveAIKey} disabled={!aiKey} icon={aiSaved ? '✅' : '💾'}>
               {aiSaved ? 'Clé enregistrée !' : 'Enregistrer la clé'}
             </ActionBtn>

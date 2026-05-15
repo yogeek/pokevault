@@ -24,7 +24,10 @@ export function ScanPage() {
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
-    getSetting('aiApiKeyEnc').then(k => setAiKey((k as string) || null))
+    const reload = () => getSetting('aiApiKeyEnc').then(k => setAiKey((k as string) || null))
+    reload()
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
   }, [])
 
   // Stop camera stream when component unmounts (e.g. user navigates away mid-scan)

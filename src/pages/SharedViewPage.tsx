@@ -114,7 +114,8 @@ function SharedViewContent({
       const result = checkCard(detectedId, snap)
       const card = catalog.cards.find(c => c.id === detectedId)
       setScanResult({ result, card })
-    } catch {
+    } catch (err) {
+      console.error('AI scan failed:', err)
       setScanResult({ result: { type: 'unknown' } })
     } finally {
       setScanning(false)
