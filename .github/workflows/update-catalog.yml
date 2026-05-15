@@ -2,19 +2,34 @@ name: Update Pokémon catalog
 
 on:
   schedule:
-    - cron: '0 4 1 * *'  # Premier du mois à 4h UTC
-  workflow_dispatch:
+    - cron: '0 4 1 * *'  # 1er du mois à 4h UTC
+  workflow_dispatch:       # déclenchement manuel possible
+
+permissions:
+  contents: write          # nécessaire pour le commit auto
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/update-catalog.mjs
+          cache: npm
+
+      - run: npm ci
+
+      - name: Générer le catalogue TCGdex
+        run: node scripts/update-catalog.mjs
+
+      - name: Bump patch version
+        run: npm version patch --no-git-tag-version
+
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'chore: update Pokémon TCG catalog'
-          file_pattern: 'public/catalog.json'
+          commit_message: 'chore: mise à jour catalogue TCGdex'
+          file_pattern: 'public/catalog.json package.json'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
