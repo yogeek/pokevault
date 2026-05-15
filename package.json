@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "update-catalog": "node scripts/update-catalog.mjs"
+    "update-catalog": "node scripts/update-catalog.mjs",
+    "gen-icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "dexie": "^4.0.8",

@@ -6,6 +6,7 @@ import { useCatalogStore } from '@/stores/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
+import { useExportReminder } from '@/hooks/useExportReminder'
 import type { Condition } from '@/types'
 
 type SortKey = 'date' | 'name' | 'set' | 'qty'
@@ -20,6 +21,8 @@ export function CollectionPage() {
   const [showFilters, setShowFilters] = useState(false)
 
   const catalog = useCatalogStore(s => s.catalog)
+  const showExportReminder = useExportReminder()
+  const [reminderDismissed, setReminderDismissed] = useState(false)
 
   const inventory = useLiveQuery(() =>
     db.inventory.orderBy('addedAt').reverse().toArray()
@@ -207,6 +210,30 @@ export function CollectionPage() {
           </div>
         )}
       </div>
+
+      {/* Export reminder banner */}
+      {showExportReminder && !reminderDismissed && (
+        <div className="mx-4 mt-2 bg-amber-400/10 border border-amber-400/30 rounded-xl
+                        px-4 py-3 flex items-center gap-3 text-sm">
+          <span className="text-xl">💾</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-amber-300 font-medium">Pensez à sauvegarder !</p>
+            <p className="text-xs text-amber-400/80">
+              Votre collection grossit — exportez-la régulièrement.
+            </p>
+          </div>
+          <Link to="/settings" className="text-xs text-amber-300 shrink-0 hover:underline">
+            Exporter →
+          </Link>
+          <button
+            onClick={() => setReminderDismissed(true)}
+            aria-label="Fermer"
+            className="text-amber-400/60 hover:text-amber-300 shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       {inventory === undefined ? (
