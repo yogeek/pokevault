@@ -9,13 +9,25 @@ export interface OCRResult {
 }
 
 export interface CardRecognizer {
-  recognize(imageData: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult>
+  recognize(
+    imageData: ImageData | HTMLVideoElement | HTMLCanvasElement,
+    onProgress?: (status: string) => void,
+  ): Promise<OCRResult>
 }
 
 export class ManualRecognizer implements CardRecognizer {
   async recognize(): Promise<OCRResult> {
     return { confidence: 0, rawText: '', suggestions: [] }
   }
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  'loading tesseract core':        'Chargement moteur OCR…',
+  'initializing tesseract':        'Initialisation…',
+  'initializing api':              'Initialisation…',
+  'loading language traineddata':  'Chargement langue…',
+  'initialized api':               'Prêt',
+  'recognizing text':              'Lecture de la carte…',
 }
 
 export class TesseractRecognizer implements CardRecognizer {
@@ -25,23 +37,33 @@ export class TesseractRecognizer implements CardRecognizer {
     this.catalog = catalog
   }
 
-  async recognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
+  async recognize(
+    source: ImageData | HTMLVideoElement | HTMLCanvasElement,
+    onProgress?: (status: string) => void,
+  ): Promise<OCRResult> {
+    // 5-minute deadline — first load downloads ~7 MB of assets from the app server
     const deadline = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(
-        'Tesseract trop lent (>60s). Vérifiez votre connexion — le WASM doit être téléchargé au 1er scan.'
-      )), 60_000)
+        'OCR trop long (>5 min). Vérifiez votre connexion.'
+      )), 5 * 60_000)
     )
-    return Promise.race([this._doRecognize(source), deadline])
+    return Promise.race([this._doRecognize(source, onProgress), deadline])
   }
 
-  private async _doRecognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
+  private async _doRecognize(
+    source: ImageData | HTMLVideoElement | HTMLCanvasElement,
+    onProgress?: (status: string) => void,
+  ): Promise<OCRResult> {
     const { createWorker } = await import('tesseract.js')
-    // Use locally-served assets — avoids any CDN fetch that can hang on mobile.
     const base = import.meta.env.BASE_URL.replace(/\/$/, '')
     const worker = await createWorker('eng', 1, {
       workerPath: `${base}/tesseract/worker.min.js`,
       corePath: `${base}/tesseract/tesseract-core-lstm.wasm.js`,
       langPath: `${base}/tesseract/lang`,
+      logger: (m: { status: string }) => {
+        const label = STATUS_LABELS[m.status]
+        if (label) onProgress?.(label)
+      },
     })
     try {
       const baseCanvas = toCanvas(source)

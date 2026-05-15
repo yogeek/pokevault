@@ -24,6 +24,7 @@ export function ScanPage() {
   const [error, setError] = useState('')
   const [firstScan, setFirstScan] = useState(true)
   const [preview, setPreview] = useState<string | null>(null)
+  const [ocrStatus, setOcrStatus] = useState('')
 
   useEffect(() => {
     if (mode === 'scanning' && videoRef.current && streamRef.current) {
@@ -37,10 +38,11 @@ export function ScanPage() {
 
   const runOCR = useCallback(async (canvas: HTMLCanvasElement) => {
     if (!catalog) return
+    setOcrStatus('')
     setMode('recognizing')
     try {
       const recognizer = new TesseractRecognizer(catalog)
-      const ocrResult = await recognizer.recognize(canvas)
+      const ocrResult = await recognizer.recognize(canvas, setOcrStatus)
       setFirstScan(false)
       setResult(ocrResult.suggestions)
       setRawText(ocrResult.rawText)
@@ -200,7 +202,7 @@ export function ScanPage() {
               className="w-40 rounded-xl shadow-lg opacity-70 object-contain max-h-56" />
           )}
           <Spinner />
-          <p className="text-sm text-slate-400">Reconnaissance en cours…</p>
+          <p className="text-sm text-slate-300">{ocrStatus || 'Initialisation…'}</p>
           {firstScan && <p className="text-xs text-amber-400">{FIRST_SCAN_HINT}</p>}
           <button onClick={reset} className="text-xs text-slate-600 underline mt-2">Annuler</button>
         </div>
