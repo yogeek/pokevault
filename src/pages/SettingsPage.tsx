@@ -525,7 +525,11 @@ export function SettingsPage() {
       {/* ── À propos ── */}
       <Section title="À propos">
         <div className="space-y-1 text-xs text-slate-400">
-          <p><span className="text-slate-200 font-medium">PokeVault</span> v0.1.0</p>
+          <p>
+            <span className="text-slate-200 font-medium">PokeVault</span>
+            {' '}v{__APP_VERSION__}
+            <span className="text-slate-600"> · build {__APP_BUILD__}</span>
+          </p>
           <p>100 % local · Pas de compte · Pas de télémétrie</p>
           <p>Base catalogue : Pokémon TCG API (snapshot statique)</p>
         </div>

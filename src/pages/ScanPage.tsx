@@ -5,6 +5,9 @@ import { TesseractRecognizer } from '@/lib/ocr'
 import { Spinner } from '@/components/ui/Spinner'
 import type { CatalogCard } from '@/types'
 
+// Tesseract WASM loads on first capture (~10-30s on slow connections)
+const FIRST_SCAN_HINT = 'Le 1er scan charge Tesseract (~30s). Les suivants sont plus rapides.'
+
 type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'error'
 
 export function ScanPage() {
@@ -16,6 +19,7 @@ export function ScanPage() {
   const [mode, setMode] = useState<ScanMode>('idle')
   const [result, setResult] = useState<CatalogCard[]>([])
   const [error, setError] = useState('')
+  const [firstScan, setFirstScan] = useState(true)
 
   // Attach stream once mode becomes 'scanning' and video is in the DOM
   useEffect(() => {
@@ -63,6 +67,7 @@ export function ScanPage() {
     try {
       const recognizer = new TesseractRecognizer(catalog)
       const ocrResult = await recognizer.recognize(canvas)
+      setFirstScan(false)
       setResult(ocrResult.suggestions)
       setMode('result')
     } catch (err) {
@@ -85,11 +90,12 @@ export function ScanPage() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
         </div>
-        <div className="absolute bottom-8 inset-x-0 flex justify-center">
+        <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2">
           <button onClick={capture}
-            className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg">
+            className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
             <div className="w-12 h-12 rounded-full bg-brand-500" />
           </button>
+          <span className="text-xs text-white/70 bg-black/40 rounded px-2 py-0.5">Appuyez pour capturer</span>
         </div>
       </div>
 
@@ -101,20 +107,31 @@ export function ScanPage() {
                 d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
             </svg>
           </div>
-          <button onClick={startCamera}
-            className="bg-brand-500 text-white px-8 py-3 rounded-full font-semibold text-lg">
-            Démarrer le scan
-          </button>
+          {!catalog ? (
+            <div className="flex items-center gap-2 text-slate-400 text-sm">
+              <Spinner /> Chargement du catalogue…
+            </div>
+          ) : (
+            <button onClick={startCamera}
+              className="bg-brand-500 text-white px-8 py-3 rounded-full font-semibold text-lg">
+              Démarrer le scan
+            </button>
+          )}
           <p className="text-xs text-slate-500 text-center">
+            Pointez la caméra sur la carte puis appuyez sur le bouton.<br />
+            {firstScan && <span className="text-amber-400">{FIRST_SCAN_HINT}</span>}
+          </p>
+          <p className="text-xs text-slate-600 text-center">
             Ou <button onClick={() => navigate('/add')} className="text-brand-400 underline">recherchez manuellement</button>
           </p>
         </div>
       )}
 
       {mode === 'recognizing' && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
+        <div className="flex flex-col items-center justify-center py-16 gap-4 px-8 text-center">
           <Spinner />
-          <p className="text-sm text-slate-500">Reconnaissance en cours…</p>
+          <p className="text-sm text-slate-400">Reconnaissance en cours…</p>
+          {firstScan && <p className="text-xs text-amber-400">{FIRST_SCAN_HINT}</p>}
         </div>
       )}
 
