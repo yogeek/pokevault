@@ -18,6 +18,7 @@ export function ScanPage() {
 
   const [mode, setMode] = useState<ScanMode>('idle')
   const [result, setResult] = useState<CatalogCard[]>([])
+  const [rawText, setRawText] = useState('')
   const [error, setError] = useState('')
   const [firstScan, setFirstScan] = useState(true)
 
@@ -69,6 +70,7 @@ export function ScanPage() {
       const ocrResult = await recognizer.recognize(canvas)
       setFirstScan(false)
       setResult(ocrResult.suggestions)
+      setRawText(ocrResult.rawText)
       setMode('result')
     } catch (err) {
       setError(`Erreur OCR: ${err instanceof Error ? err.message : 'inconnue'}`)
@@ -137,10 +139,12 @@ export function ScanPage() {
 
       {mode === 'result' && (
         <div className="px-4 py-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-400">Résultats détectés</h2>
+          <h2 className="text-sm font-semibold text-slate-400">
+            {result.length > 0 ? `${result.length} correspondance${result.length > 1 ? 's' : ''}` : 'Aucune correspondance'}
+          </h2>
           {result.length === 0 && (
-            <div className="text-sm text-slate-500 py-4 text-center">
-              Aucune correspondance. <button onClick={() => navigate('/add')} className="text-brand-400 underline">Recherche manuelle</button>
+            <div className="text-sm text-slate-500 py-2 text-center">
+              <button onClick={() => navigate('/add')} className="text-brand-400 underline">Recherche manuelle →</button>
             </div>
           )}
           {result.map(card => (
@@ -156,10 +160,29 @@ export function ScanPage() {
               </svg>
             </button>
           ))}
-          <button onClick={() => { setResult([]); setMode('idle') }}
-            className="w-full border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
-            Rescanner
-          </button>
+
+          {/* OCR debug — collapsible */}
+          {rawText && (
+            <details className="text-xs text-slate-600 bg-slate-900 rounded-xl px-3 py-2">
+              <summary className="cursor-pointer select-none text-slate-500">
+                Texte lu par OCR ▾
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed">
+                {rawText.trim()}
+              </pre>
+            </details>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => { setResult([]); setRawText(''); setMode('idle') }}
+              className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
+              Rescanner
+            </button>
+            <button onClick={() => navigate('/add')}
+              className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
+              Manuel
+            </button>
+          </div>
         </div>
       )}
 

@@ -1,6 +1,5 @@
 import type { CatalogCard } from '@/types'
 import type { CatalogData } from './catalog'
-import { searchCards } from './catalog'
 
 export interface OCRResult {
   cardId?: string
@@ -9,28 +8,16 @@ export interface OCRResult {
   suggestions: CatalogCard[]
 }
 
-/** Minimal regex to extract "4/102" or "4" from card text */
-function parseCardNumber(text: string): { number: string; total?: string } | null {
-  const m = text.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/)
-  if (m) return { number: m[1], total: m[2] }
-  const m2 = text.match(/\b(\d{1,4})\b/)
-  if (m2) return { number: m2[1] }
-  return null
-}
-
-/** Interface to plug different recognizer implementations */
 export interface CardRecognizer {
   recognize(imageData: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult>
 }
 
-/** Level 0 — always available, zero deps: just returns unknown with fuzzy search  */
 export class ManualRecognizer implements CardRecognizer {
   async recognize(): Promise<OCRResult> {
     return { confidence: 0, rawText: '', suggestions: [] }
   }
 }
 
-/** Level 1 — Tesseract.js OCR (loaded lazily) */
 export class TesseractRecognizer implements CardRecognizer {
   private catalog: CatalogData
 
@@ -39,7 +26,6 @@ export class TesseractRecognizer implements CardRecognizer {
   }
 
   async recognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
-    // Lazy import — the WASM is heavy (~2 MB), only loaded on first scan
     const { createWorker } = await import('tesseract.js')
     const worker = await createWorker('eng')
     try {
@@ -47,17 +33,72 @@ export class TesseractRecognizer implements CardRecognizer {
       const { data } = await worker.recognize(canvas)
       const rawText = data.text
       const confidence = data.confidence / 100
-
-      const parsed = parseCardNumber(rawText)
-      const suggestions = parsed
-        ? searchCards(this.catalog, parsed.number, 5)
-        : searchCards(this.catalog, rawText.slice(0, 20), 5)
-
+      const suggestions = matchCard(this.catalog, rawText)
       return { confidence, rawText, suggestions, cardId: suggestions[0]?.id }
     } finally {
       await worker.terminate()
     }
   }
+}
+
+/**
+ * Match strategy (card number is language-independent, so prioritized over name):
+ * 1. Parse "X/Y" → find cards with number === X  (exact, not contains)
+ *    → if total Y is known, keep only cards whose set has that many cards
+ * 2. Parse words → score cards by longest common prefix with catalog name
+ * 3. Merge: number matches first, then name matches, dedup, cap at 5
+ */
+function matchCard(catalog: CatalogData, rawText: string): CatalogCard[] {
+  const results: CatalogCard[] = []
+  const seen = new Set<string>()
+
+  const add = (card: CatalogCard) => {
+    if (!seen.has(card.id)) { seen.add(card.id); results.push(card) }
+  }
+
+  // ── 1. Exact number match ──────────────────────────────────────────────────
+  const numMatch = rawText.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/)
+  if (numMatch) {
+    const num = numMatch[1]          // e.g. "20"
+    const total = parseInt(numMatch[2], 10) // e.g. 82
+
+    catalog.cards
+      .filter(c => c.number === num)
+      // Prefer sets whose size is close to the scanned total
+      .sort((a, b) => {
+        const sizeA = catalog.cards.filter(x => x.setId === a.setId).length
+        const sizeB = catalog.cards.filter(x => x.setId === b.setId).length
+        return Math.abs(sizeA - total) - Math.abs(sizeB - total)
+      })
+      .slice(0, 3)
+      .forEach(add)
+  }
+
+  // ── 2. Name match (word-by-word, longest prefix wins) ─────────────────────
+  const words = rawText
+    .split(/[\n\r\s,./\\()\[\]{}|_\-]+/)
+    .map(w => w.replace(/[^a-zA-ZÀ-ÿ]/g, '').trim().toLowerCase())
+    .filter(w => w.length >= 4)
+
+  if (words.length > 0) {
+    const scored = catalog.cards.map(card => {
+      const name = card.name.toLowerCase()
+      let score = 0
+      for (const word of words) {
+        if (name === word) { score += 20; break }
+        if (name.startsWith(word) || word.startsWith(name)) { score += 10; break }
+        if (name.includes(word)) score += 3
+      }
+      return { card, score }
+    })
+    scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .forEach(s => add(s.card))
+  }
+
+  return results.slice(0, 5)
 }
 
 function toCanvas(source: ImageData | HTMLVideoElement | HTMLCanvasElement): HTMLCanvasElement {
