@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { TesseractRecognizer } from '@/lib/ocr'
@@ -17,19 +17,26 @@ export function ScanPage() {
   const [result, setResult] = useState<CatalogCard[]>([])
   const [error, setError] = useState('')
 
+  // Attach stream once mode becomes 'scanning' and video is in the DOM
+  useEffect(() => {
+    if (mode === 'scanning' && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current
+      videoRef.current.play().catch(() => {
+        setError("Impossible de démarrer la vidéo.")
+        setMode('error')
+      })
+    }
+  }, [mode])
+
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 } },
       })
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setMode('scanning')
+      setMode('scanning') // triggers the useEffect above
     } catch {
-      setError('Impossible d\'accéder à la caméra. Vérifiez les permissions.')
+      setError("Impossible d'accéder à la caméra. Vérifiez les permissions.")
       setMode('error')
     }
   }, [])
@@ -37,16 +44,25 @@ export function ScanPage() {
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
   }, [])
 
   const capture = useCallback(async () => {
-    if (!videoRef.current || !catalog) return
-    setMode('recognizing')
+    const video = videoRef.current
+    if (!video || !catalog) return
+
+    // Snapshot the frame NOW, before any state change unmounts the element
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')!.drawImage(video, 0, 0)
+
     stopCamera()
+    setMode('recognizing')
 
     try {
       const recognizer = new TesseractRecognizer(catalog)
-      const ocrResult = await recognizer.recognize(videoRef.current)
+      const ocrResult = await recognizer.recognize(canvas)
       setResult(ocrResult.suggestions)
       setMode('result')
     } catch (err) {
@@ -60,6 +76,21 @@ export function ScanPage() {
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
         <h1 className="text-xl font-bold">Scanner</h1>
         <p className="text-xs text-slate-500">Pointez vers une carte Pokémon</p>
+      </div>
+
+      {/* Video always mounted so videoRef is always populated */}
+      <div className={mode === 'scanning' ? 'relative' : 'hidden'}>
+        <video ref={videoRef} playsInline muted
+          className="w-full aspect-[3/4] object-cover bg-black" />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
+        </div>
+        <div className="absolute bottom-8 inset-x-0 flex justify-center">
+          <button onClick={capture}
+            className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-full bg-brand-500" />
+          </button>
+        </div>
       </div>
 
       {mode === 'idle' && (
@@ -77,23 +108,6 @@ export function ScanPage() {
           <p className="text-xs text-slate-500 text-center">
             Ou <button onClick={() => navigate('/add')} className="text-brand-400 underline">recherchez manuellement</button>
           </p>
-        </div>
-      )}
-
-      {mode === 'scanning' && (
-        <div className="relative">
-          <video ref={videoRef} playsInline muted
-            className="w-full aspect-[3/4] object-cover bg-black" />
-          {/* Guide overlay */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
-          </div>
-          <div className="absolute bottom-8 inset-x-0 flex justify-center">
-            <button onClick={capture}
-              className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg">
-              <div className="w-12 h-12 rounded-full bg-brand-500" />
-            </button>
-          </div>
         </div>
       )}
 
