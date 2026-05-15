@@ -475,35 +475,40 @@ export function SettingsPage() {
       )}
 
       {/* ── Reconnaissance IA ── */}
-      <Section title="Reconnaissance avancée (IA)">
+      <Section title="Reconnaissance de cartes (IA)">
         {!showAI ? (
-          <button
-            onClick={() => setShowAI(true)}
-            className="text-sm text-brand-400 hover:underline"
-          >
-            Activer la reconnaissance par IA →
-          </button>
+          <div className="space-y-2">
+            <p className="text-xs text-slate-400">
+              La reconnaissance automatique envoie la photo de la carte à{' '}
+              <strong className="text-slate-200">Claude Haiku</strong> (Anthropic) qui identifie
+              le Pokémon et le numéro. Aucune donnée de collection n'est transmise.
+            </p>
+            <button
+              onClick={() => setShowAI(true)}
+              className="text-sm text-brand-400 hover:underline"
+            >
+              Configurer la clé API →
+            </button>
+          </div>
         ) : (
           <div className="space-y-3">
             <div className="bg-slate-800/60 rounded-xl p-3 text-xs text-slate-400 space-y-1">
-              <p className="font-medium text-slate-300">Ce qui sera envoyé</p>
-              <p>· L'image de la carte (JPEG recadré)</p>
-              <p>· Un prompt de reconnaissance</p>
-              <p className="text-green-400">· Rien d'autre — pas de données collection</p>
+              <p className="font-medium text-slate-300">Modèle : Claude Haiku (Anthropic)</p>
+              <p>· Photo de la carte uniquement</p>
+              <p>· ~0,001 € par scan</p>
+              <p className="text-green-400">· Aucune donnée de collection envoyée</p>
             </div>
-            <select
-              value={aiProvider}
-              onChange={e => setAiProvider(e.target.value)}
-              className="w-full bg-slate-800 rounded-xl px-3 py-2.5 text-sm
-                         focus:outline-none focus:ring-2 focus:ring-brand-500"
+            <a
+              href="https://console.anthropic.com/settings/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs text-brand-400 hover:underline"
             >
-              <option value="openai">OpenAI (GPT-4o Vision)</option>
-              <option value="anthropic">Anthropic (Claude 3.5)</option>
-              <option value="gemini">Google Gemini 1.5</option>
-            </select>
+              Obtenir une clé sur console.anthropic.com →
+            </a>
             <input
               type="password"
-              placeholder="Clé API (sk-… / claude-… / AIza…)"
+              placeholder="sk-ant-…"
               value={aiKey}
               onChange={e => setAiKey(e.target.value)}
               className="w-full bg-slate-800 rounded-xl px-3 py-2.5 text-sm font-mono
