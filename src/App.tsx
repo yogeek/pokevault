@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/ui/BottomNav'
 import { CollectionPage } from '@/pages/CollectionPage'
 import { AddCardPage } from '@/pages/AddCardPage'
@@ -19,13 +19,14 @@ const FULLSCREEN_ROUTES = ['/view']
 
 export default function App() {
   const loadCatalog = useCatalogStore(s => s.load)
+  const { pathname } = useLocation()
 
   useEffect(() => {
     initDB().catch(console.error)
     loadCatalog().catch(console.error)
   }, [loadCatalog])
 
-  const isFullscreen = FULLSCREEN_ROUTES.some(r => window.location.pathname.startsWith(r))
+  const isFullscreen = FULLSCREEN_ROUTES.some(r => pathname.startsWith(r))
 
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
