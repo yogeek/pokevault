@@ -27,14 +27,12 @@ export class TesseractRecognizer implements CardRecognizer {
 
   async recognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
     const { createWorker } = await import('tesseract.js')
-    // FR+EN reading — covers French cards natively
-    const worker = await createWorker(['fra', 'eng'])
+    const worker = await createWorker('eng')
     try {
       const baseCanvas = toCanvas(source)
 
-      // Try multiple orientations; cards photographed in landscape need rotation.
-      // Early-exit on a confident result to save time (each OCR ~2-4s).
-      const orientations = [0, 90, 270, 180]
+      // Try portrait then landscape — covers the two most common card orientations.
+      const orientations = [0, 90]
       let best = { text: '', confidence: 0, score: -Infinity }
 
       for (const rot of orientations) {
