@@ -53,9 +53,9 @@ export default defineConfig({
             options: { cacheName: 'catalog', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
           },
           {
-            urlPattern: /^https:\/\/images\.pokemontcg\.io\//,
+            urlPattern: /^https:\/\/assets\.tcgdex\.net\//,
             handler: 'CacheFirst',
-            options: { cacheName: 'card-images', expiration: { maxEntries: 2000, maxAgeSeconds: 60 * 60 * 24 * 90 } },
+            options: { cacheName: 'card-images', expiration: { maxEntries: 5000, maxAgeSeconds: 60 * 60 * 24 * 90 } },
           },
         ],
       },

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Fetches the Pokémon TCG card catalog and writes it to public/catalog.json.
+ * Builds public/catalog.json from TCGdex (tcgdex.dev).
+ * Fetches FR + EN in parallel per set → card has both name (EN) and nameFr (FR).
  * Usage: npm run update-catalog
- * Requires network access. Run manually or via GitHub Action (monthly).
  */
 
+import TCGdex from '@tcgdex/sdk'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -12,60 +13,103 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT = join(__dirname, '..', 'public', 'catalog.json')
 
-const BASE = 'https://api.pokemontcg.io/v2'
-const PAGE_SIZE = 250
+const BATCH = 5    // parallel set fetches
+const DELAY = 300  // ms between batches (rate-limit courtesy)
 
-async function fetchAll(endpoint, params = {}) {
-  const items = []
-  let page = 1
-  while (true) {
-    const url = new URL(`${BASE}/${endpoint}`)
-    url.searchParams.set('pageSize', PAGE_SIZE)
-    url.searchParams.set('page', page)
-    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+const sdkFr = new TCGdex('fr')
+const sdkEn = new TCGdex('en')
 
-    console.log(`  GET ${url.pathname}?page=${page}`)
-    const res = await fetch(url.toString())
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
-    const json = await res.json()
-    items.push(...json.data)
-    if (items.length >= json.totalCount) break
-    page++
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+async function tryFetch(fn, label) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fn()
+      if (r != null) return r
+    } catch {
+      if (attempt === 3) console.warn(`  ⚠ échec: ${label}`)
+    }
+    await sleep(300 * attempt)
   }
-  return items
+  return undefined
 }
 
 async function main() {
-  console.log('Fetching Pokémon TCG sets…')
-  const rawSets = await fetchAll('sets', { orderBy: 'releaseDate' })
-  const sets = rawSets.map(s => ({
-    id:          s.id,
-    name:        s.name,
-    series:      s.series,
-    releaseDate: s.releaseDate,
-    total:       s.total,
-    logoUrl:     s.images?.logo ?? '',
-  }))
+  console.log('=== TCGdex catalog builder ===\n')
 
-  console.log(`Fetched ${sets.length} sets. Fetching cards…`)
-  const rawCards = await fetchAll('cards', { orderBy: 'set.releaseDate,number' })
-  const cards = rawCards.map(c => ({
-    id:        c.id,
-    name:      c.name,
-    setId:     c.set.id,
-    setName:   c.set.name,
-    number:    c.number,
-    total:     c.set.printedTotal ?? c.set.total,
-    rarity:    c.rarity ?? 'Unknown',
-    imageUrl:  c.images?.small ?? c.images?.large ?? '',
-    supertype: c.supertype ?? 'Pokémon',
-  }))
+  console.log('1/3  Chargement de la liste des sets (FR)…')
+  const setList = await tryFetch(() => sdkFr.fetchSets(), 'sets')
+  if (!setList?.length) throw new Error('Aucun set retourné — vérifiez le réseau')
+  console.log(`     ${setList.length} sets trouvés\n`)
 
-  console.log(`Fetched ${cards.length} cards.`)
+  console.log('2/3  Téléchargement des cartes par set (FR + EN en parallèle)…')
+  const sets = []
+  const cards = []
+  let done = 0
 
+  for (let i = 0; i < setList.length; i += BATCH) {
+    const batch = setList.slice(i, i + BATCH)
+
+    const results = await Promise.all(batch.map(async (sr) => {
+      const [frSet, enSet] = await Promise.all([
+        tryFetch(() => sdkFr.fetchSet(sr.id), `FR ${sr.id}`),
+        tryFetch(() => sdkEn.fetchSet(sr.id), `EN ${sr.id}`),
+      ])
+      return { sr, frSet, enSet }
+    }))
+
+    for (const { sr, frSet, enSet } of results) {
+      done++
+      process.stdout.write(`\r     ${done}/${setList.length} sets traités`)
+
+      if (!frSet?.cards?.length) continue
+
+      const enSetName = enSet?.name ?? sr.name
+      sets.push({
+        id:          sr.id,
+        name:        enSetName,
+        nameFr:      frSet.name,
+        series:      frSet.serie?.name ?? '',
+        releaseDate: frSet.releaseDate ?? '',
+        total:       frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
+        logoUrl:     sr.logo ?? '',
+      })
+
+      // Index EN cards by localId for name + image lookup
+      const enById = Object.fromEntries(
+        (enSet?.cards ?? []).map(c => [c.localId, c])
+      )
+
+      for (const card of frSet.cards) {
+        const enCard = enById[card.localId]
+        // Prefer EN image (standard reference); fallback to FR image
+        const imageBase = enCard?.image ?? card.image ?? ''
+        cards.push({
+          id:        `${sr.id}-${card.localId}`,
+          name:      enCard?.name ?? card.name,
+          nameFr:    card.name,
+          setId:     sr.id,
+          setName:   enSetName,
+          number:    card.localId,
+          total:     frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
+          rarity:    '',
+          imageUrl:  imageBase ? `${imageBase}/high.webp` : '',
+          supertype: 'Pokémon',
+        })
+      }
+    }
+
+    if (i + BATCH < setList.length) await sleep(DELAY)
+  }
+
+  console.log(`\n     ${cards.length} cartes dans ${sets.length} sets\n`)
+
+  console.log('3/3  Écriture de catalog.json…')
   mkdirSync(dirname(OUT), { recursive: true })
-  writeFileSync(OUT, JSON.stringify({ sets, cards }, null, 0))
-  console.log(`Written to ${OUT} (${(writeFileSync.length, Buffer.byteLength(JSON.stringify({ sets, cards })) / 1024).toFixed(0)} KB)`)
+  const json = JSON.stringify({ sets, cards })
+  writeFileSync(OUT, json)
+  console.log(`     Fait — ${(Buffer.byteLength(json) / 1024).toFixed(0)} KB → ${OUT}`)
+  console.log('\n✓ Catalogue mis à jour avec succès !')
 }
 
-main().catch(err => { console.error(err); process.exit(1) })
+main().catch(err => { console.error('\n✗ ' + err.message); process.exit(1) })

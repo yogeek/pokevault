@@ -5,20 +5,22 @@ export type Rarity =
   | 'Rare Secret' | 'Promo' | string
 
 export interface CatalogCard {
-  id: string         // ex. "base1-4"
-  name: string
+  id: string         // ex. "base-set-4"
+  name: string       // English name
+  nameFr?: string    // French name (ex. "Sulfura" for Moltres)
   setId: string
   setName: string
   number: string     // ex. "4"
   total: number      // ex. 102
   rarity: Rarity
-  imageUrl: string   // URL relative ou CDN
+  imageUrl: string   // TCGdex CDN URL
   supertype: string  // Pokémon | Trainer | Energy
 }
 
 export interface CatalogSet {
   id: string
-  name: string
+  name: string       // English name
+  nameFr?: string    // French name
   series: string
   releaseDate: string
   total: number
