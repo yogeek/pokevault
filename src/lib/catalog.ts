@@ -7,11 +7,40 @@ export interface CatalogData {
 
 let cache: CatalogData | null = null
 
-export async function loadCatalog(): Promise<CatalogData> {
+export async function loadCatalog(onProgress?: (p: number) => void): Promise<CatalogData> {
   if (cache) return cache
-  const res = await fetch('/catalog.json')
-  if (!res.ok) throw new Error('Failed to load catalog')
-  cache = await res.json() as CatalogData
+
+  const url = import.meta.env.BASE_URL + 'catalog.json'
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Erreur ${res.status} : impossible de charger le catalogue`)
+
+  const contentLength = res.headers.get('content-length')
+  const total = contentLength ? parseInt(contentLength, 10) : null
+
+  let text: string
+  if (total && res.body) {
+    const reader = res.body.getReader()
+    const chunks: Uint8Array[] = []
+    let loaded = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      loaded += value.length
+      onProgress?.(loaded / total)
+    }
+    const merged = new Uint8Array(loaded)
+    let offset = 0
+    for (const c of chunks) { merged.set(c, offset); offset += c.length }
+    text = new TextDecoder().decode(merged)
+  } else {
+    onProgress?.(0.3)
+    text = await res.text()
+    onProgress?.(0.8)
+  }
+
+  cache = JSON.parse(text) as CatalogData
+  onProgress?.(1)
   return cache
 }
 
