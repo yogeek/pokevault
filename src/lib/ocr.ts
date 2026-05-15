@@ -26,8 +26,23 @@ export class TesseractRecognizer implements CardRecognizer {
   }
 
   async recognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
+    const deadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(
+        'Tesseract trop lent (>60s). Vérifiez votre connexion — le WASM doit être téléchargé au 1er scan.'
+      )), 60_000)
+    )
+    return Promise.race([this._doRecognize(source), deadline])
+  }
+
+  private async _doRecognize(source: ImageData | HTMLVideoElement | HTMLCanvasElement): Promise<OCRResult> {
     const { createWorker } = await import('tesseract.js')
-    const worker = await createWorker('eng')
+    // Use locally-served assets — avoids any CDN fetch that can hang on mobile.
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+    const worker = await createWorker('eng', 1, {
+      workerPath: `${base}/tesseract/worker.min.js`,
+      corePath: `${base}/tesseract/tesseract-core-lstm.wasm.js`,
+      langPath: `${base}/tesseract/lang`,
+    })
     try {
       const baseCanvas = toCanvas(source)
 
@@ -42,7 +57,7 @@ export class TesseractRecognizer implements CardRecognizer {
         if (score > best.score) {
           best = { text: data.text, confidence: data.confidence / 100, score }
         }
-        if (score >= 80) break  // confident enough, stop trying rotations
+        if (score >= 80) break
       }
 
       const suggestions = matchCard(this.catalog, best.text)
@@ -53,7 +68,7 @@ export class TesseractRecognizer implements CardRecognizer {
         cardId: suggestions[0]?.id,
       }
     } finally {
-      await worker.terminate()
+      await worker.terminate().catch(() => {})
     }
   }
 }

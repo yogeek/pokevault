@@ -202,6 +202,7 @@ export function ScanPage() {
           <Spinner />
           <p className="text-sm text-slate-400">Reconnaissance en cours…</p>
           {firstScan && <p className="text-xs text-amber-400">{FIRST_SCAN_HINT}</p>}
+          <button onClick={reset} className="text-xs text-slate-600 underline mt-2">Annuler</button>
         </div>
       )}
 

@@ -46,7 +46,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Large Tesseract assets (WASM, language data) are cached at runtime
+        globIgnores: ['**/tesseract/**'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
+          {
+            urlPattern: /\/tesseract\//,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tesseract-assets',
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
           {
             // StaleWhileRevalidate: sert le cache immédiatement, rafraîchit en arrière-plan
             // → le nouveau catalogue est dispo dès le prochain lancement
