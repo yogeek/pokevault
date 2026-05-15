@@ -33,10 +33,18 @@ export default function App() {
     return <CatalogError message={error} onRetry={() => { useCatalogStore.setState({ error: null }); load() }} />
   }
 
+  // Affiche un badge de diagnostic discret si le catalogue semble trop petit
+  const catalogInfo = catalog ? `${catalog.cards.length} cartes · ${catalog.sets.length} sets` : ''
+
   const isFullscreen = FULLSCREEN_ROUTES.some(r => pathname.startsWith(r))
 
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
+      {catalogInfo && (
+        <div className="fixed top-1 right-1 z-50 text-[9px] text-slate-700 px-1 select-none">
+          {catalogInfo}
+        </div>
+      )}
       <Routes>
         <Route path="/"               element={<CollectionPage />} />
         <Route path="/add"            element={<AddCardPage />} />

@@ -48,9 +48,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
+            // StaleWhileRevalidate: sert le cache immédiatement, rafraîchit en arrière-plan
+            // → le nouveau catalogue est dispo dès le prochain lancement
             urlPattern: /\/catalog\.json$/,
-            handler: 'CacheFirst',
-            options: { cacheName: 'catalog', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'catalog' },
           },
           {
             urlPattern: /^https:\/\/assets\.tcgdex\.net\//,
