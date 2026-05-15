@@ -5,7 +5,7 @@ import { TesseractRecognizer } from '@/lib/ocr'
 import { Spinner } from '@/components/ui/Spinner'
 import type { CatalogCard } from '@/types'
 
-type ScanMode = 'idle' | 'scanning' | 'result' | 'error'
+type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'error'
 
 export function ScanPage() {
   const navigate = useNavigate()
@@ -41,13 +41,18 @@ export function ScanPage() {
 
   const capture = useCallback(async () => {
     if (!videoRef.current || !catalog) return
-    setMode('idle')
+    setMode('recognizing')
     stopCamera()
 
-    const recognizer = new TesseractRecognizer(catalog)
-    const ocrResult = await recognizer.recognize(videoRef.current)
-    setResult(ocrResult.suggestions)
-    setMode('result')
+    try {
+      const recognizer = new TesseractRecognizer(catalog)
+      const ocrResult = await recognizer.recognize(videoRef.current)
+      setResult(ocrResult.suggestions)
+      setMode('result')
+    } catch (err) {
+      setError(`Erreur OCR: ${err instanceof Error ? err.message : 'inconnue'}`)
+      setMode('error')
+    }
   }, [catalog, stopCamera])
 
   return (
@@ -92,8 +97,11 @@ export function ScanPage() {
         </div>
       )}
 
-      {mode === 'idle' && result.length === 0 && false /* guard */ && (
-        <div className="flex justify-center py-16"><Spinner /></div>
+      {mode === 'recognizing' && (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <Spinner />
+          <p className="text-sm text-slate-500">Reconnaissance en cours…</p>
+        </div>
       )}
 
       {mode === 'result' && (
