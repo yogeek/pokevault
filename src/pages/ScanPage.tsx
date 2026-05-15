@@ -15,14 +15,15 @@ export function ScanPage() {
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [mode, setMode] = useState<ScanMode>('idle')
   const [result, setResult] = useState<CatalogCard[]>([])
   const [rawText, setRawText] = useState('')
   const [error, setError] = useState('')
   const [firstScan, setFirstScan] = useState(true)
+  const [preview, setPreview] = useState<string | null>(null)
 
-  // Attach stream once mode becomes 'scanning' and video is in the DOM
   useEffect(() => {
     if (mode === 'scanning' && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current
@@ -33,13 +34,30 @@ export function ScanPage() {
     }
   }, [mode])
 
+  const runOCR = useCallback(async (canvas: HTMLCanvasElement) => {
+    if (!catalog) return
+    setMode('recognizing')
+    try {
+      const recognizer = new TesseractRecognizer(catalog)
+      const ocrResult = await recognizer.recognize(canvas)
+      setFirstScan(false)
+      setResult(ocrResult.suggestions)
+      setRawText(ocrResult.rawText)
+      setMode('result')
+    } catch (err) {
+      setError(`Erreur OCR: ${err instanceof Error ? err.message : 'inconnue'}`)
+      setMode('error')
+    }
+  }, [catalog])
+
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 } },
       })
       streamRef.current = stream
-      setMode('scanning') // triggers the useEffect above
+      setPreview(null)
+      setMode('scanning')
     } catch {
       setError("Impossible d'accéder à la caméra. Vérifiez les permissions.")
       setMode('error')
@@ -55,37 +73,68 @@ export function ScanPage() {
   const capture = useCallback(async () => {
     const video = videoRef.current
     if (!video || !catalog) return
-
-    // Snapshot the frame NOW, before any state change unmounts the element
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
-
     stopCamera()
-    setMode('recognizing')
+    await runOCR(canvas)
+  }, [catalog, stopCamera, runOCR])
 
-    try {
-      const recognizer = new TesseractRecognizer(catalog)
-      const ocrResult = await recognizer.recognize(canvas)
-      setFirstScan(false)
-      setResult(ocrResult.suggestions)
-      setRawText(ocrResult.rawText)
-      setMode('result')
-    } catch (err) {
-      setError(`Erreur OCR: ${err instanceof Error ? err.message : 'inconnue'}`)
+  const pickImage = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleImageFile = useCallback(async (e: Event) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file || !catalog) return
+    ;(e.target as HTMLInputElement).value = ''  // allow re-picking the same file
+
+    const url = URL.createObjectURL(file)
+    setPreview(url)
+
+    const img = new Image()
+    img.onload = async () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      canvas.getContext('2d')!.drawImage(img, 0, 0)
+      URL.revokeObjectURL(url)
+      await runOCR(canvas)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      setPreview(null)
+      setError("Impossible de lire l'image.")
       setMode('error')
     }
-  }, [catalog, stopCamera])
+    img.src = url
+  }, [catalog, runOCR])
+
+  const reset = useCallback(() => {
+    setResult([])
+    setRawText('')
+    setPreview(null)
+    setMode('idle')
+  }, [])
 
   return (
     <div className="pb-24">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageFile as unknown as React.ChangeEventHandler<HTMLInputElement>}
+      />
+
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
         <h1 className="text-xl font-bold">Scanner</h1>
-        <p className="text-xs text-slate-500">Pointez vers une carte Pokémon</p>
+        <p className="text-xs text-slate-500">Caméra ou photo de la galerie</p>
       </div>
 
-      {/* Video always mounted so videoRef is always populated */}
+      {/* Video — always mounted */}
       <div className={mode === 'scanning' ? 'relative' : 'hidden'}>
         <video ref={videoRef} playsInline muted
           className="w-full aspect-[3/4] object-cover bg-black" />
@@ -102,35 +151,54 @@ export function ScanPage() {
       </div>
 
       {mode === 'idle' && (
-        <div className="flex flex-col items-center py-16 gap-6 px-8">
-          <div className="w-24 h-24 rounded-full bg-slate-800 flex items-center justify-center">
-            <svg className="w-12 h-12 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className="flex flex-col items-center py-12 gap-5 px-8">
+          <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center">
+            <svg className="w-10 h-10 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round"
                 d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
             </svg>
           </div>
+
           {!catalog ? (
             <div className="flex items-center gap-2 text-slate-400 text-sm">
               <Spinner /> Chargement du catalogue…
             </div>
           ) : (
-            <button onClick={startCamera}
-              className="bg-brand-500 text-white px-8 py-3 rounded-full font-semibold text-lg">
-              Démarrer le scan
-            </button>
+            <div className="w-full space-y-3">
+              <button onClick={startCamera}
+                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M4 8a2 2 0 012-2h9a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" />
+                </svg>
+                Caméra
+              </button>
+              <button onClick={pickImage}
+                className="w-full bg-slate-800 text-slate-200 py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 border border-slate-700">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Charger une photo
+              </button>
+            </div>
           )}
+
           <p className="text-xs text-slate-500 text-center">
-            Pointez la caméra sur la carte puis appuyez sur le bouton.<br />
             {firstScan && <span className="text-amber-400">{FIRST_SCAN_HINT}</span>}
           </p>
-          <p className="text-xs text-slate-600 text-center">
-            Ou <button onClick={() => navigate('/add')} className="text-brand-400 underline">recherchez manuellement</button>
-          </p>
+          <button onClick={() => navigate('/add')} className="text-xs text-slate-600 underline">
+            Recherche manuelle
+          </button>
         </div>
       )}
 
       {mode === 'recognizing' && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 px-8 text-center">
+        <div className="flex flex-col items-center justify-center py-12 gap-4 px-8 text-center">
+          {preview && (
+            <img src={preview} alt="carte scannée"
+              className="w-40 rounded-xl shadow-lg opacity-70 object-contain max-h-56" />
+          )}
           <Spinner />
           <p className="text-sm text-slate-400">Reconnaissance en cours…</p>
           {firstScan && <p className="text-xs text-amber-400">{FIRST_SCAN_HINT}</p>}
@@ -139,8 +207,14 @@ export function ScanPage() {
 
       {mode === 'result' && (
         <div className="px-4 py-4 space-y-3">
+          {preview && (
+            <img src={preview} alt="carte scannée"
+              className="w-full max-h-48 object-contain rounded-xl bg-slate-900" />
+          )}
           <h2 className="text-sm font-semibold text-slate-400">
-            {result.length > 0 ? `${result.length} correspondance${result.length > 1 ? 's' : ''}` : 'Aucune correspondance'}
+            {result.length > 0
+              ? `${result.length} correspondance${result.length > 1 ? 's' : ''}`
+              : 'Aucune correspondance'}
           </h2>
           {result.length === 0 && (
             <div className="text-sm text-slate-500 py-2 text-center">
@@ -161,26 +235,21 @@ export function ScanPage() {
             </button>
           ))}
 
-          {/* OCR debug — collapsible */}
-          {rawText && (
-            <details className="text-xs text-slate-600 bg-slate-900 rounded-xl px-3 py-2">
-              <summary className="cursor-pointer select-none text-slate-500">
-                Texte lu par OCR ▾
-              </summary>
-              <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed">
-                {rawText.trim()}
-              </pre>
-            </details>
-          )}
+          <details className="text-xs text-slate-600 bg-slate-900 rounded-xl px-3 py-2">
+            <summary className="cursor-pointer select-none text-slate-500">Texte lu par OCR ▾</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed">
+              {rawText.trim() || '(vide)'}
+            </pre>
+          </details>
 
           <div className="flex gap-2">
-            <button onClick={() => { setResult([]); setRawText(''); setMode('idle') }}
+            <button onClick={reset}
               className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
               Rescanner
             </button>
-            <button onClick={() => navigate('/add')}
+            <button onClick={pickImage}
               className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
-              Manuel
+              Autre photo
             </button>
           </div>
         </div>
@@ -189,7 +258,7 @@ export function ScanPage() {
       {mode === 'error' && (
         <div className="px-4 py-8 text-center space-y-3">
           <p className="text-red-400">{error}</p>
-          <button onClick={() => setMode('idle')} className="text-brand-400 text-sm">Réessayer</button>
+          <button onClick={reset} className="text-brand-400 text-sm">Réessayer</button>
         </div>
       )}
     </div>
