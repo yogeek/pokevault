@@ -262,6 +262,18 @@ export function ScanPage() {
         <div className="px-4 py-8 text-center space-y-3">
           <p className="text-red-400">{error}</p>
           <button onClick={reset} className="text-brand-400 text-sm">Réessayer</button>
+          <button
+            onClick={async () => {
+              if ('caches' in window) {
+                const keys = await caches.keys()
+                await Promise.all(keys.map(k => caches.delete(k)))
+              }
+              window.location.reload()
+            }}
+            className="block w-full text-xs text-slate-500 underline mt-1"
+          >
+            Vider le cache et recharger
+          </button>
         </div>
       )}
     </div>
