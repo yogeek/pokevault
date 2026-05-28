@@ -5,7 +5,7 @@ import { db } from '@/db'
 import { deleteEntry, updateEntry } from '@/db/inventory'
 import { addToWishlist, removeFromWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName } from '@/lib/catalog'
+import { cardName, cardSetName } from '@/lib/catalog'
 import { ConditionBadge, PriorityBadge } from '@/components/ui/Badge'
 import { Toast } from '@/components/ui/Toast'
 import type { Condition, InventoryEntry, WishlistEntry, WishlistPriority } from '@/types'
@@ -114,7 +114,7 @@ export function CardDetailPage() {
             <PriorityBadge priority={wishlistEntry.priority as WishlistPriority} />
           )}
         </div>
-        <p className="text-sm text-slate-400">{card.setName} · #{card.number}/{card.total}</p>
+        <p className="text-sm text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
         <div className="flex gap-2 mt-1">
           <span className="text-xs bg-slate-800 px-2 py-0.5 rounded">{card.rarity}</span>
           <span className="text-xs bg-slate-800 px-2 py-0.5 rounded">{card.supertype}</span>

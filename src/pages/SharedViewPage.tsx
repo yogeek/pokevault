@@ -236,7 +236,7 @@ function ScanResultCard({
             <img src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
             <div>
               <p className="text-sm font-semibold">{cardName(card)}</p>
-              <p className="text-xs text-slate-400">{card.setName}</p>
+              <p className="text-xs text-slate-400">{card.setNameFr ?? card.setName}</p>
             </div>
           </div>
         )}

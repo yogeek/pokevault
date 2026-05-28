@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName } from '@/lib/catalog'
+import { cardName, cardSetName } from '@/lib/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
@@ -299,7 +299,7 @@ export function CollectionPage() {
                     {inWishlist && <span className="text-xs">🎁</span>}
                   </div>
                   <p className="text-xs text-slate-400 truncate">
-                    {card?.setName} · #{card?.number}
+                    {card && cardSetName(card)} · #{card?.number}
                   </p>
                   <div className="flex gap-1 mt-1 flex-wrap">
                     {entries.slice(0, 3).map((e, i) => (

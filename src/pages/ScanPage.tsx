@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName } from '@/lib/catalog'
+import { cardName, cardSetName } from '@/lib/catalog'
 import { recognizeCardWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import type { AiModelId } from '@/lib/ai-scan'
@@ -263,7 +263,7 @@ export function ScanPage() {
               />
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{cardName(card)}</p>
-                <p className="text-xs text-slate-400">{card.setName} · #{card.number}/{card.total}</p>
+                <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
               </div>
               <svg className="w-5 h-5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

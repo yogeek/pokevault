@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
-import { searchCards, cardName } from '@/lib/catalog'
+import { searchCards, cardName, cardSetName } from '@/lib/catalog'
 import { addInventoryEntry } from '@/db/inventory'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
@@ -139,7 +139,7 @@ export function AddCardPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{cardName(card)}</p>
                   <p className="text-xs text-slate-400 truncate">
-                    {card.setName} · #{card.number} · {card.rarity}
+                    {cardSetName(card)} · #{card.number} · {card.rarity}
                   </p>
                 </div>
                 <span className="text-xs text-slate-500 shrink-0">{card.supertype}</span>
@@ -167,7 +167,7 @@ export function AddCardPage() {
             />
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate">{cardName(selected)}</p>
-              <p className="text-sm text-slate-400">{selected.setName}</p>
+              <p className="text-sm text-slate-400">{cardSetName(selected)}</p>
               <p className="text-xs text-slate-500">#{selected.number} · {selected.rarity}</p>
               <button
                 onClick={() => setSelected(null)}

@@ -74,3 +74,8 @@ export function getCardsBySet(catalog: CatalogData, setId: string): CatalogCard[
 export function cardName(card: { name: string; nameFr?: string }): string {
   return card.nameFr ?? card.name
 }
+
+/** Nom du set à afficher : FR si dispo, sinon EN */
+export function cardSetName(card: { setName: string; setNameFr?: string }): string {
+  return card.setNameFr ?? card.setName
+}

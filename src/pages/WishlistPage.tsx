@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { db } from '@/db'
 import { removeFromWishlist, addToWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName } from '@/lib/catalog'
+import { cardName, cardSetName } from '@/lib/catalog'
 import { PriorityBadge } from '@/components/ui/Badge'
 import type { WishlistPriority } from '@/types'
 
@@ -57,7 +57,7 @@ export function WishlistPage() {
                     </Link>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{card ? cardName(card) : entry.cardId}</p>
-                      <p className="text-xs text-slate-400">{card?.setName}</p>
+                      <p className="text-xs text-slate-400">{card && cardSetName(card)}</p>
                       <PriorityBadge priority={entry.priority as WishlistPriority} />
                     </div>
                     <div className="flex flex-col gap-1 items-end">
