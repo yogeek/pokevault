@@ -82,7 +82,7 @@ async function main() {
 
       for (const card of frSet.cards) {
         const enCard = enById[card.localId]
-        const imageBase = enCard?.image ?? card.image ?? ''
+        const imageBase = card.image ?? enCard?.image ?? ''
         // TCGdex category: 'Pokemon' | 'Trainer' | 'Energy'
         const category = enCard?.category ?? card.category ?? 'Pokemon'
         const supertype = category === 'Trainer' ? 'Trainer'
