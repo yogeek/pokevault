@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
-import { recognizeCardWithClaude, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
+import { recognizeCardWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import type { AiModelId } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
@@ -228,7 +228,9 @@ export function ScanPage() {
           )}
           <Spinner />
           <p className="text-sm text-slate-300">Identification en cours…</p>
-          <p className="text-xs text-slate-500">Claude Haiku analyse la carte</p>
+          <p className="text-xs text-slate-500">
+            {AI_MODELS.find(m => m.id === aiModel)?.label ?? 'Claude'} analyse la carte
+          </p>
           <button onClick={reset} className="text-xs text-slate-600 underline mt-1">Annuler</button>
         </div>
       )}

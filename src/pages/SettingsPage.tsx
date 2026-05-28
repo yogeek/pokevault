@@ -58,6 +58,7 @@ export function SettingsPage() {
     })
     getSetting('aiProvider').then(p => { if (p) setAiProvider(p as string) })
     getSetting('aiModel').then(m => { if (m) setAiModel(m as AiModelId) })
+    getSetting('aiApiKeyEnc').then(k => { if (k) setAiKey(k as string) })
   }, [])
 
   function notify(msg: string) {
@@ -496,9 +497,11 @@ export function SettingsPage() {
         ) : (
           <div className="space-y-3">
             <div className="bg-slate-800/60 rounded-xl p-3 text-xs text-slate-400 space-y-1">
-              <p className="font-medium text-slate-300">Modèle : Claude Haiku (Anthropic)</p>
+              <p className="font-medium text-slate-300">
+                Modèle : {AI_MODELS.find(m => m.id === aiModel)?.label ?? aiModel} (Anthropic)
+              </p>
               <p>· Photo de la carte uniquement</p>
-              <p>· ~0,001 € par scan</p>
+              <p>· {AI_MODELS.find(m => m.id === aiModel)?.note ?? ''}</p>
               <p className="text-green-400">· Aucune donnée de collection envoyée</p>
             </div>
             <a
