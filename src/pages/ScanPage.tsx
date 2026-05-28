@@ -2,8 +2,9 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
-import { recognizeCardWithClaude } from '@/lib/ai-scan'
+import { recognizeCardWithClaude, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
+import type { AiModelId } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
 import type { CatalogCard } from '@/types'
 
@@ -22,9 +23,13 @@ export function ScanPage() {
   const [preview, setPreview] = useState<string | null>(null)
   // undefined = still loading from DB; null = loaded but not set; string = ready
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
+  const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
 
   useEffect(() => {
-    const reload = () => getSetting('aiApiKeyEnc').then(k => setAiKey((k as string) || null))
+    const reload = () => {
+      getSetting('aiApiKeyEnc').then(k => setAiKey((k as string) || null))
+      getSetting('aiModel').then(m => { if (m) setAiModel(m as AiModelId) })
+    }
     reload()
     window.addEventListener('focus', reload)
     return () => window.removeEventListener('focus', reload)
@@ -55,14 +60,14 @@ export function ScanPage() {
     }
     setMode('recognizing')
     try {
-      const cards = await recognizeCardWithClaude(canvas, aiKey, catalog)
+      const cards = await recognizeCardWithClaude(canvas, aiKey, catalog, aiModel)
       setResult(cards)
       setMode('result')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
     }
-  }, [catalog, aiKey])
+  }, [catalog, aiKey, aiModel])
 
   const startCamera = useCallback(async () => {
     try {

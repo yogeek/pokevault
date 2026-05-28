@@ -125,5 +125,6 @@ export interface AppSettings {
   aiEnabled: boolean
   aiProvider?: string
   aiApiKeyEnc?: string
+  aiModel?: string
   darkMode: 'system' | 'dark' | 'light'
 }

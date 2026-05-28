@@ -5,8 +5,9 @@ import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
 import { checkCard } from '@/lib/share'
 import { pinSharedView } from '@/db/sharing'
-import { recognizeCardWithClaude } from '@/lib/ai-scan'
+import { recognizeCardWithClaude, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
+import type { AiModelId } from '@/lib/ai-scan'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
 
@@ -95,17 +96,21 @@ function SharedViewContent({
     setScanning(true)
     setScanResult(null)
     try {
-      const apiKey = await getSetting('aiApiKeyEnc') as string | undefined
+      const [apiKey, storedModel] = await Promise.all([
+        getSetting('aiApiKeyEnc') as Promise<string | undefined>,
+        getSetting('aiModel') as Promise<AiModelId | undefined>,
+      ])
       if (!apiKey) {
         setScanResult({ result: { type: 'unknown' } })
         return
       }
+      const model = storedModel ?? DEFAULT_AI_MODEL
       const video = videoRef.current
       const canvas = document.createElement('canvas')
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       canvas.getContext('2d')!.drawImage(video, 0, 0)
-      const cards = await recognizeCardWithClaude(canvas, apiKey, catalog)
+      const cards = await recognizeCardWithClaude(canvas, apiKey, catalog, model)
       const detectedId = cards[0]?.id
       if (!detectedId) {
         setScanResult({ result: { type: 'unknown' } })

@@ -5,8 +5,10 @@ import {
   serializeBackup, parseBackup, toCSV, fromCSV,
   encryptBackup, decryptBackup, estimateStorageUsage, formatBytes,
 } from '@/lib/backup'
+import { AI_MODELS, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
 import type { BackupData } from '@/lib/backup'
+import type { AiModelId } from '@/lib/ai-scan'
 
 type ImportStep = 'idle' | 'preview' | 'importing' | 'done' | 'error'
 type RestoreStep = 'idle' | 'decrypting' | 'preview' | 'restoring' | 'done' | 'error'
@@ -36,6 +38,7 @@ export function SettingsPage() {
   const [showAI, setShowAI] = useState(false)
   const [aiProvider, setAiProvider] = useState('openai')
   const [aiKey, setAiKey] = useState('')
+  const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [aiSaved, setAiSaved] = useState(false)
 
   // Stats
@@ -54,6 +57,7 @@ export function SettingsPage() {
       })
     })
     getSetting('aiProvider').then(p => { if (p) setAiProvider(p as string) })
+    getSetting('aiModel').then(m => { if (m) setAiModel(m as AiModelId) })
   }, [])
 
   function notify(msg: string) {
@@ -226,9 +230,8 @@ export function SettingsPage() {
 
   async function saveAIKey() {
     await setSetting('aiProvider', aiProvider)
-    // In a real implementation: encrypt with device fingerprint
-    // For now store as-is (still only on device, in IndexedDB)
     await setSetting('aiApiKeyEnc', aiKey)
+    await setSetting('aiModel', aiModel)
     await setSetting('aiEnabled', true)
     setAiSaved(true)
     setTimeout(() => setAiSaved(false), 2000)
@@ -506,6 +509,22 @@ export function SettingsPage() {
             >
               Obtenir une clé sur console.anthropic.com →
             </a>
+            <div className="space-y-1.5">
+              <p className="text-xs text-slate-400 font-medium">Modèle</p>
+              {AI_MODELS.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setAiModel(m.id)}
+                  className={`w-full text-left px-3 py-2 rounded-xl border text-sm transition-colors
+                    ${aiModel === m.id
+                      ? 'border-brand-500 bg-brand-500/10 text-brand-300'
+                      : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}
+                >
+                  <span className="font-medium">{m.label}</span>
+                  <span className="text-xs ml-2 opacity-70">{m.note}</span>
+                </button>
+              ))}
+            </div>
             <input
               type="password"
               placeholder="sk-ant-…"

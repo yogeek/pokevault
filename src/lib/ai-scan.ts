@@ -14,10 +14,20 @@ function toJpegBase64(canvas: HTMLCanvasElement): string {
   return out.toDataURL('image/jpeg', 0.85).split(',')[1]
 }
 
+export const AI_MODELS = [
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', note: '~0,001 €/scan · rapide' },
+  { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6', note: '~0,01 €/scan · précis' },
+  { id: 'claude-opus-4-8',           label: 'Opus 4.8',   note: '~0,05 €/scan · très précis' },
+] as const
+
+export type AiModelId = typeof AI_MODELS[number]['id']
+export const DEFAULT_AI_MODEL: AiModelId = 'claude-haiku-4-5-20251001'
+
 export async function recognizeCardWithClaude(
   canvas: HTMLCanvasElement,
   apiKey: string,
   catalog: CatalogData,
+  model: AiModelId = DEFAULT_AI_MODEL,
 ): Promise<CatalogCard[]> {
   const imageData = toJpegBase64(canvas)
   const controller = new AbortController()
@@ -35,7 +45,7 @@ export async function recognizeCardWithClaude(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model,
         max_tokens: 100,
         messages: [{
           role: 'user',
