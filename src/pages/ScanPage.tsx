@@ -86,7 +86,7 @@ export function ScanPage() {
     return aiKey
   }, [aiKey])
 
-  const runRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
+  const runRecognition = useCallback(async (canvas: HTMLCanvasElement, currentPreview: string | null) => {
     if (!catalog) return
     const key = checkApiKey()
     if (!key) return
@@ -95,14 +95,14 @@ export function ScanPage() {
       const cards = await recognizeCardWithClaude(canvas, key, catalog, aiModel)
       setResult(cards)
       setMode('result')
-      saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview })
+      saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview: currentPreview })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
     }
-  }, [catalog, checkApiKey, aiModel])
+  }, [catalog, checkApiKey, aiModel, scanType])
 
-  const runPageRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
+  const runPageRecognition = useCallback(async (canvas: HTMLCanvasElement, currentPreview: string | null) => {
     if (!catalog) return
     const key = checkApiKey()
     if (!key) return
@@ -113,12 +113,12 @@ export function ScanPage() {
       setPageSelected(new Set(cards.map(c => c.id)))
       setAddedCount(0)
       setMode('page-result')
-      saveScan({ mode: 'page-result', scanType, result: [], pageResult: cards, preview })
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: cards, preview: currentPreview })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
     }
-  }, [catalog, checkApiKey, aiModel])
+  }, [catalog, checkApiKey, aiModel, scanType])
 
   const startCamera = useCallback(async () => {
     try {
@@ -147,9 +147,11 @@ export function ScanPage() {
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    setPreview(dataUrl)
     stopCamera()
-    if (scanType === 'page') await runPageRecognition(canvas)
-    else await runRecognition(canvas)
+    if (scanType === 'page') await runPageRecognition(canvas, dataUrl)
+    else await runRecognition(canvas, dataUrl)
   }, [catalog, scanType, stopCamera, runRecognition, runPageRecognition])
 
   const pickImage = useCallback(() => {
@@ -172,8 +174,8 @@ export function ScanPage() {
         canvas.width = img.naturalWidth
         canvas.height = img.naturalHeight
         canvas.getContext('2d')!.drawImage(img, 0, 0)
-        if (scanType === 'page') runPageRecognition(canvas)
-        else runRecognition(canvas)
+        if (scanType === 'page') runPageRecognition(canvas, dataUrl)
+        else runRecognition(canvas, dataUrl)
       }
       img.src = dataUrl
     }
@@ -190,6 +192,20 @@ export function ScanPage() {
     setLightbox(null)
     setMode('idle')
   }, [])
+
+  const retryScan = useCallback(() => {
+    if (!preview || !catalog) return
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      canvas.getContext('2d')!.drawImage(img, 0, 0)
+      if (scanType === 'page') runPageRecognition(canvas, preview)
+      else runRecognition(canvas, preview)
+    }
+    img.src = preview
+  }, [preview, catalog, scanType, runRecognition, runPageRecognition])
 
   const toggleCard = useCallback((id: string) => {
     setPageSelected(prev => {
@@ -368,7 +384,13 @@ export function ScanPage() {
               </svg>
             </button>
           ))}
-          <div className="flex gap-2 pt-1">
+          {preview && (
+            <button onClick={retryScan}
+              className="w-full border border-brand-500/40 bg-brand-500/10 rounded-xl py-2.5 text-sm text-brand-400">
+              Relancer le scan (même photo)
+            </button>
+          )}
+          <div className="flex gap-2">
             <button onClick={reset} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">Nouveau scan</button>
             <button onClick={pickImage} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">Autre photo</button>
           </div>
@@ -442,6 +464,12 @@ export function ScanPage() {
                 Ajouter {pageSelected.size} carte{pageSelected.size > 1 ? 's' : ''} à la collection
               </button>
             )}
+            {preview && (
+              <button onClick={retryScan}
+                className="w-full border border-brand-500/40 bg-brand-500/10 rounded-xl py-2.5 text-sm text-brand-400">
+                Relancer le scan (même photo)
+              </button>
+            )}
             <div className="flex gap-2">
               <button onClick={reset} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
                 Nouveau scan
@@ -475,7 +503,13 @@ export function ScanPage() {
           ) : (
             <>
               <p className="text-red-400 text-sm">{error}</p>
-              <button onClick={reset} className="text-brand-400 text-sm">Réessayer</button>
+              {preview && (
+                <button onClick={retryScan}
+                  className="w-full border border-brand-500/40 bg-brand-500/10 rounded-xl py-2.5 text-sm text-brand-400">
+                  Relancer le scan (même photo)
+                </button>
+              )}
+              <button onClick={reset} className="text-brand-400 text-sm">Nouveau scan</button>
             </>
           )}
         </div>
