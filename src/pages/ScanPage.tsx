@@ -325,9 +325,17 @@ export function ScanPage() {
         addedAt: new Date().toISOString(),
       })
     ))
-    setAddedCount(toAdd.length)
+    const addedIds = new Set(toAdd.map(c => c.id))
+    const remaining = pageResult.filter(d => {
+      const id = d[0]?.card.id
+      return id ? !addedIds.has(id) : false
+    })
+    setPageResult(remaining)
     setPageSelected(new Set())
-  }, [pageResult, pageSelected])
+    setCandidateSheet(null)
+    setAddedCount(prev => prev + toAdd.length)
+    saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview })
+  }, [pageResult, pageSelected, scanType, preview])
 
   const aiLoading = aiKey === undefined
   const aiConfigured = !!aiKey
@@ -554,17 +562,30 @@ export function ScanPage() {
               <h2 className="font-semibold">
                 {pageResult.length} carte{pageResult.length > 1 ? 's' : ''} identifiée{pageResult.length > 1 ? 's' : ''}
               </h2>
-              <p className="text-xs text-slate-500">{pageSelected.size} sélectionnée{pageSelected.size > 1 ? 's' : ''} · Appuyez pour voir les alternatives</p>
+              <p className="text-xs text-slate-500">
+              {pageSelected.size} sélectionnée{pageSelected.size > 1 ? 's' : ''}
+              {addedCount > 0 && ` · ${addedCount} ajoutée${addedCount > 1 ? 's' : ''}`}
+              {pageResult.length > 0 && ' · Appuyez pour voir les alternatives'}
+            </p>
             </div>
             <button onClick={toggleAll} className="text-xs text-brand-400 hover:underline">
               {pageSelected.size === pageResult.length ? 'Tout désélectionner' : 'Tout sélectionner'}
             </button>
           </div>
 
-          {pageResult.length === 0 && (
+          {pageResult.length === 0 && addedCount === 0 && (
             <div className="text-center py-8 space-y-2">
               <p className="text-slate-400">Aucune carte reconnue.</p>
               <p className="text-xs text-slate-500">Essayez avec un meilleur éclairage ou un modèle plus puissant.</p>
+            </div>
+          )}
+          {pageResult.length === 0 && addedCount > 0 && (
+            <div className="text-center py-8 space-y-2">
+              <p className="text-2xl">✅</p>
+              <p className="text-green-400 font-semibold">
+                {addedCount} carte{addedCount > 1 ? 's' : ''} ajoutée{addedCount > 1 ? 's' : ''} !
+              </p>
+              <p className="text-xs text-slate-500">Toutes les cartes sélectionnées ont été ajoutées.</p>
             </div>
           )}
 
@@ -631,12 +652,6 @@ export function ScanPage() {
               )
             })}
           </div>
-
-          {addedCount > 0 && (
-            <p className="text-green-400 text-sm text-center">
-              ✅ {addedCount} carte{addedCount > 1 ? 's' : ''} ajoutée{addedCount > 1 ? 's' : ''} à la collection !
-            </p>
-          )}
 
           <div className="space-y-2 pt-1">
             {pageSelected.size > 0 && (
