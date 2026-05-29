@@ -1,7 +1,7 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName, cardSetName } from '@/lib/catalog'
+import { cardName, cardSetName, searchCards } from '@/lib/catalog'
 import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import { db } from '@/db'
@@ -42,8 +42,9 @@ function saveScan(s: PersistedScan) {
 function clearScan() { sessionStorage.removeItem(STORAGE_KEY) }
 
 function scoreColor(score: number) {
-  if (score >= 80) return { badge: 'bg-green-500/20 text-green-400', dot: 'bg-green-400' }
-  if (score >= 60) return { badge: 'bg-amber-500/20 text-amber-400', dot: 'bg-amber-400' }
+  if (score === 0)  return { badge: 'bg-slate-600/40 text-slate-400', dot: 'bg-slate-400' }
+  if (score >= 80)  return { badge: 'bg-green-500/20 text-green-400', dot: 'bg-green-400' }
+  if (score >= 60)  return { badge: 'bg-amber-500/20 text-amber-400', dot: 'bg-amber-400' }
   return { badge: 'bg-red-500/20 text-red-400', dot: 'bg-red-400' }
 }
 
@@ -67,6 +68,7 @@ export function ScanPage() {
     new Set(saved?.pageResult?.map(d => d[0]?.card.id).filter(Boolean) ?? [])
   )
   const [candidateSheet, setCandidateSheet] = useState<number | null>(null)
+  const [sheetSearchQuery, setSheetSearchQuery] = useState('')
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -97,6 +99,16 @@ export function ScanPage() {
       })
     }
   }, [mode])
+
+  // Reset search whenever the sheet opens/closes
+  useEffect(() => { setSheetSearchQuery('') }, [candidateSheet])
+
+  // Live catalog search inside the candidate sheet
+  const sheetSearchResults = useMemo((): ScoredCard[] => {
+    const q = sheetSearchQuery.trim()
+    if (!q || !catalog || candidateSheet === null) return []
+    return searchCards(catalog, q, 10).map(card => ({ card, score: 0 }))
+  }, [sheetSearchQuery, catalog, candidateSheet])
 
   const checkApiKey = useCallback((): string | null => {
     if (aiKey === undefined) return null
@@ -357,43 +369,78 @@ export function ScanPage() {
             </div>
             <div className="px-4 pt-1 pb-6">
               <h3 className="text-sm font-semibold text-slate-300 mb-1">Propositions alternatives</h3>
-              <p className="text-xs text-slate-500 mb-3">
-                Appuyez sur la bonne carte pour la sélectionner
-              </p>
-              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                {pageResult[candidateSheet].map((sc, i) => {
-                  const { badge } = scoreColor(sc.score)
-                  const isCurrent = i === 0
-                  return (
-                    <button
-                      key={sc.card.id}
-                      onClick={() => pickCandidate(candidateSheet, sc)}
-                      className={`w-full flex items-center gap-3 rounded-xl p-3 text-left transition-colors
-                        ${isCurrent
-                          ? 'bg-brand-500/15 border border-brand-500/40'
-                          : 'bg-slate-800 border border-transparent hover:border-slate-600'}`}
-                    >
-                      <img
-                        src={sc.card.imageUrl}
-                        alt={cardName(sc.card)}
-                        className="w-10 h-14 object-cover rounded flex-shrink-0"
-                        onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{cardName(sc.card)}</p>
-                        <p className="text-xs text-slate-400">
-                          {cardSetName(sc.card)} · #{sc.card.number}/{sc.card.total}
-                        </p>
-                        {isCurrent && (
-                          <p className="text-[11px] text-brand-400 mt-0.5">Sélection actuelle</p>
+
+              {/* Warn when top confidence is low */}
+              {(pageResult[candidateSheet][0]?.score ?? 0) < 60 && (
+                <p className="text-xs text-amber-400/80 mb-2">
+                  Confiance faible — les propositions ci-dessous sont peut-être incorrectes. Utilisez la recherche si nécessaire.
+                </p>
+              )}
+
+              {/* Inline search */}
+              <div className="relative mb-3">
+                <input
+                  type="text"
+                  value={sheetSearchQuery}
+                  onChange={e => setSheetSearchQuery(e.target.value)}
+                  placeholder="Rechercher par nom…"
+                  className="w-full bg-slate-800 rounded-xl px-4 py-2.5 pr-9 text-sm text-slate-200
+                             placeholder-slate-500 border border-slate-700 focus:outline-none focus:border-brand-500"
+                />
+                {sheetSearchQuery && (
+                  <button
+                    onClick={() => setSheetSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+                {(() => {
+                  const items = sheetSearchQuery.trim() ? sheetSearchResults : pageResult[candidateSheet]
+                  if (sheetSearchQuery.trim() && items.length === 0) {
+                    return <p className="text-center text-slate-500 text-sm py-6">Aucun résultat</p>
+                  }
+                  return items.map((sc, i) => {
+                    const { badge } = scoreColor(sc.score)
+                    const isCurrent = !sheetSearchQuery.trim() && i === 0
+                    return (
+                      <button
+                        key={`${sc.card.id}-${i}`}
+                        onClick={() => pickCandidate(candidateSheet, sc)}
+                        className={`w-full flex items-center gap-3 rounded-xl p-3 text-left transition-colors
+                          ${isCurrent
+                            ? 'bg-brand-500/15 border border-brand-500/40'
+                            : 'bg-slate-800 border border-transparent hover:border-slate-600'}`}
+                      >
+                        <img
+                          src={sc.card.imageUrl}
+                          alt={cardName(sc.card)}
+                          className="w-10 h-14 object-cover rounded flex-shrink-0"
+                          onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{cardName(sc.card)}</p>
+                          <p className="text-xs text-slate-400">
+                            {cardSetName(sc.card)} · #{sc.card.number}/{sc.card.total}
+                          </p>
+                          {isCurrent && (
+                            <p className="text-[11px] text-brand-400 mt-0.5">Sélection actuelle</p>
+                          )}
+                        </div>
+                        {sc.score > 0 && (
+                          <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${badge}`}>
+                            {sc.score}%
+                          </span>
                         )}
-                      </div>
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${badge}`}>
-                        {sc.score}%
-                      </span>
-                    </button>
-                  )
-                })}
+                      </button>
+                    )
+                  })
+                })()}
               </div>
               <button
                 onClick={() => setCandidateSheet(null)}
@@ -637,8 +684,10 @@ export function ScanPage() {
                       <p className="text-xs text-slate-400 truncate">{cardSetName(card)} · #{card.number}</p>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-                        <span className={`text-[11px] font-semibold ${badge.split(' ')[1]}`}>{best.score}% de confiance</span>
-                        {hasAlts && <span className="text-[11px] text-slate-500">· {candidates.length - 1} autre{candidates.length > 2 ? 's' : ''}</span>}
+                        <span className={`text-[11px] font-semibold ${badge.split(' ')[1]}`}>
+                          {best.score > 0 ? `${best.score}% de confiance` : 'Sélection manuelle'}
+                        </span>
+                        {hasAlts && best.score > 0 && <span className="text-[11px] text-slate-500">· {candidates.length - 1} autre{candidates.length > 2 ? 's' : ''}</span>}
                       </div>
                     </div>
                     {/* Chevron only if there are alternatives */}
