@@ -113,6 +113,10 @@ export async function recognizeCardWithClaude(
   return results.slice(0, 5)
 }
 
+export function matchCardFromScan(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
+  return matchOne(catalog, name, rawNumber)
+}
+
 function matchOne(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
   const [rawNum, rawTotal] = rawNumber.replace(/\s/g, '').split('/')
   const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN

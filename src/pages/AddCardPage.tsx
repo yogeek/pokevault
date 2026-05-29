@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { searchCards, cardName, cardSetName } from '@/lib/catalog'
 import { addInventoryEntry } from '@/db/inventory'
@@ -25,6 +25,8 @@ const CONDITION_LABELS: Record<Condition, string> = {
 export function AddCardPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { state } = useLocation()
+  const fromScan = !!(state as { fromScan?: boolean } | null)?.fromScan
   const catalog = useCatalogStore(s => s.catalog)
 
   const [query, setQuery] = useState('')
@@ -62,12 +64,16 @@ export function AddCardPage() {
         qty,
         pricePaid: pricePaid ? parseFloat(pricePaid) : undefined,
       })
-      setToast(true)
-      // Reset for next scan / batch add
-      setSelected(null)
-      setQuery('')
-      setQty(1)
-      setPricePaid('')
+      if (fromScan) {
+        // Go back to scan results — sessionStorage keeps them alive
+        navigate(-1)
+      } else {
+        setToast(true)
+        setSelected(null)
+        setQuery('')
+        setQty(1)
+        setPricePaid('')
+      }
     } finally {
       setSaving(false)
     }
@@ -290,16 +296,18 @@ export function AddCardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               )}
-              Ajouter + scanner suivant
+              {fromScan ? 'Ajouter à la collection' : 'Ajouter + continuer'}
             </button>
-            <button
-              onClick={handleSaveAndExit}
-              disabled={saving}
-              className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
-                         py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
-            >
-              Sauvegarder et terminer
-            </button>
+            {!fromScan && (
+              <button
+                onClick={handleSaveAndExit}
+                disabled={saving}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
+                           py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
+              >
+                Sauvegarder et terminer
+              </button>
+            )}
           </div>
         </div>
       )}

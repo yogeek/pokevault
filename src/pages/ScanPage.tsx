@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
@@ -13,38 +13,45 @@ import type { CatalogCard } from '@/types'
 type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'page-result' | 'error'
 type ScanType = 'card' | 'page'
 
-interface LocationState {
-  scanResults?: CatalogCard[]
-  scanPreview?: string | null
-  scanType?: ScanType
-  pageResults?: CatalogCard[]
-  pageSelected?: string[]
+const STORAGE_KEY = 'pokevault_scan'
+
+interface PersistedScan {
+  mode: 'result' | 'page-result'
+  scanType: ScanType
+  result: CatalogCard[]
+  pageResult: CatalogCard[]
+  preview: string | null
 }
+
+function loadScan(): PersistedScan | null {
+  try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? 'null') }
+  catch { return null }
+}
+
+function saveScan(s: PersistedScan) {
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s)) } catch { /* quota */ }
+}
+
+function clearScan() { sessionStorage.removeItem(STORAGE_KEY) }
 
 export function ScanPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Restore state when coming back from card detail
-  const locationState = (location.state ?? {}) as LocationState
-  const [mode, setMode] = useState<ScanMode>(() => {
-    if (locationState.scanResults) return 'result'
-    if (locationState.pageResults) return 'page-result'
-    return 'idle'
-  })
-  const [scanType, setScanType] = useState<ScanType>(locationState.scanType ?? 'card')
-  const [result, setResult] = useState<CatalogCard[]>(locationState.scanResults ?? [])
-  const [pageResult, setPageResult] = useState<CatalogCard[]>(locationState.pageResults ?? [])
+  const saved = loadScan()
+  const [mode, setMode] = useState<ScanMode>(saved?.mode ?? 'idle')
+  const [scanType, setScanType] = useState<ScanType>(saved?.scanType ?? 'card')
+  const [result, setResult] = useState<CatalogCard[]>(saved?.result ?? [])
+  const [pageResult, setPageResult] = useState<CatalogCard[]>(saved?.pageResult ?? [])
   const [pageSelected, setPageSelected] = useState<Set<string>>(
-    new Set(locationState.pageSelected ?? locationState.pageResults?.map(c => c.id) ?? [])
+    new Set(saved?.pageResult?.map(c => c.id) ?? [])
   )
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
-  const [preview, setPreview] = useState<string | null>(locationState.scanPreview ?? null)
+  const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
@@ -88,6 +95,7 @@ export function ScanPage() {
       const cards = await recognizeCardWithClaude(canvas, key, catalog, aiModel)
       setResult(cards)
       setMode('result')
+      saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -105,6 +113,7 @@ export function ScanPage() {
       setPageSelected(new Set(cards.map(c => c.id)))
       setAddedCount(0)
       setMode('page-result')
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: cards, preview })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -156,6 +165,7 @@ export function ScanPage() {
       const dataUrl = ev.target?.result as string
       if (!dataUrl) return
       setPreview(dataUrl)
+      clearScan()
       const img = new Image()
       img.onload = () => {
         const canvas = document.createElement('canvas')
@@ -171,6 +181,7 @@ export function ScanPage() {
   }, [catalog, scanType, runRecognition, runPageRecognition])
 
   const reset = useCallback(() => {
+    clearScan()
     setResult([])
     setPageResult([])
     setPageSelected(new Set())
@@ -340,9 +351,7 @@ export function ScanPage() {
             </p>
           )}
           {result.map(card => (
-            <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`, {
-              state: { scanResults: result, scanPreview: preview, scanType } satisfies LocationState,
-            })}
+            <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`, { state: { fromScan: true } })}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
               <img
                 src={card.imageUrl} alt={cardName(card)}
