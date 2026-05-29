@@ -26,7 +26,7 @@ export const DEFAULT_AI_MODEL: AiModelId = 'claude-haiku-4-5-20251001'
 
 export interface ScoredCard {
   card: CatalogCard
-  score: number  // 0-100 confidence
+  score: number  // 0-100 confidence; 0 = manually selected
 }
 
 // Heuristic confidence based on which criteria matched the AI output
@@ -59,12 +59,14 @@ function computeScore(
   return 20
 }
 
-// Returns up to `limit` candidates sorted by descending confidence score
+// Returns up to `limit` candidates sorted by descending confidence score.
+// excludeIds: card IDs to skip (used when retrying after rejected proposals).
 function matchCandidates(
   catalog: CatalogData,
   name: string,
   rawNumber: string,
   limit = 5,
+  excludeIds?: Set<string>,
 ): ScoredCard[] {
   const [rawNum, rawTotal] = rawNumber.replace(/\s/g, '').split('/')
   const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
@@ -76,13 +78,13 @@ function matchCandidates(
     const narrowed = pool.filter(c => parseInt(c.number, 10) === numInt)
     if (narrowed.length > 0) pool = narrowed
   } else if (!isNaN(numInt) && pool.length === 0) {
-    // Name matched nothing — fall back to number-only search
     pool = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
   }
 
   return pool
     .map(card => ({ card, score: computeScore(card, name, numInt, totalInt) }))
     .sort((a, b) => b.score - a.score)
+    .filter(sc => !excludeIds?.has(sc.card.id))
     .slice(0, limit)
 }
 
@@ -99,12 +101,12 @@ export function matchCandidatesFromScan(
   return matchCandidates(catalog, name, rawNumber, limit)
 }
 
-export async function recognizeCardWithClaude(
+// Shared: calls Claude Vision for a single card, returns parsed name + number.
+async function fetchCardNameFromClaude(
   canvas: HTMLCanvasElement,
   apiKey: string,
-  catalog: CatalogData,
-  model: AiModelId = DEFAULT_AI_MODEL,
-): Promise<CatalogCard[]> {
+  model: AiModelId,
+): Promise<{ name: string; rawNumber: string }> {
   const imageData = toJpegBase64(canvas, MAX_DIM)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
@@ -126,14 +128,8 @@ export async function recognizeCardWithClaude(
         messages: [{
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: imageData },
-            },
-            {
-              type: 'text',
-              text: 'Pokémon TCG card. Give the English Pokémon name and the card number exactly as printed (may have leading zeros, e.g. "014/094"). JSON only: {"name":"Pikachu","number":"058/102"}',
-            },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
+            { type: 'text', text: 'Pokémon TCG card. Give the English Pokémon name and the card number exactly as printed (may have leading zeros, e.g. "014/094"). JSON only: {"name":"Pikachu","number":"058/102"}' },
           ],
         }],
       }),
@@ -152,15 +148,35 @@ export async function recognizeCardWithClaude(
 
   const data = await res.json() as { content: { text: string }[] }
   const text = data.content[0]?.text ?? ''
-
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error(`Réponse illisible : ${text.slice(0, 80)}`)
-
   const parsed = JSON.parse(jsonMatch[0]) as { name?: string; number?: string }
-  const name      = parsed.name?.trim() ?? ''
-  const rawNumber = parsed.number?.replace(/\s/g, '') ?? ''
+  return {
+    name: parsed.name?.trim() ?? '',
+    rawNumber: parsed.number?.replace(/\s/g, '') ?? '',
+  }
+}
 
+export async function recognizeCardWithClaude(
+  canvas: HTMLCanvasElement,
+  apiKey: string,
+  catalog: CatalogData,
+  model: AiModelId = DEFAULT_AI_MODEL,
+): Promise<CatalogCard[]> {
+  const { name, rawNumber } = await fetchCardNameFromClaude(canvas, apiKey, model)
   return matchCandidates(catalog, name, rawNumber, 5).map(sc => sc.card)
+}
+
+// Like recognizeCardWithClaude but returns ScoredCard[] and supports excludeIds for retry loops.
+export async function recognizeCardWithClaudeScored(
+  canvas: HTMLCanvasElement,
+  apiKey: string,
+  catalog: CatalogData,
+  model: AiModelId = DEFAULT_AI_MODEL,
+  excludeIds?: Set<string>,
+): Promise<ScoredCard[]> {
+  const { name, rawNumber } = await fetchCardNameFromClaude(canvas, apiKey, model)
+  return matchCandidates(catalog, name, rawNumber, 5, excludeIds)
 }
 
 // Returns one ScoredCard[] per detected card (candidates sorted by confidence, best first).
@@ -191,14 +207,8 @@ export async function recognizePageWithClaude(
         messages: [{
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: imageData },
-            },
-            {
-              type: 'text',
-              text: 'This is a page from a Pokémon TCG binder. Identify every visible card. For each card give the English name and number exactly as printed (preserve leading zeros). Skip cards you cannot read clearly. Return ONLY valid JSON, no explanation: {"cards":[{"name":"Pikachu","number":"058/102"},{"name":"Charizard","number":"004/102"}]}',
-            },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
+            { type: 'text', text: 'This is a page from a Pokémon TCG binder. Identify every visible card. For each card give the English name and number exactly as printed (preserve leading zeros). Skip cards you cannot read clearly. Return ONLY valid JSON, no explanation: {"cards":[{"name":"Pikachu","number":"058/102"},{"name":"Charizard","number":"004/102"}]}' },
           ],
         }],
       }),

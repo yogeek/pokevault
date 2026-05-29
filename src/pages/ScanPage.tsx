@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, searchCards } from '@/lib/catalog'
-import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
+import { recognizeCardWithClaude, recognizeCardWithClaudeScored, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import { db } from '@/db'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
@@ -69,6 +69,10 @@ export function ScanPage() {
   )
   const [candidateSheet, setCandidateSheet] = useState<number | null>(null)
   const [sheetSearchQuery, setSheetSearchQuery] = useState('')
+  // retryCtx: which page-result detection is being rescanned + which IDs to exclude
+  const [retryCtx, setRetryCtx] = useState<{ detectionIdx: number; rejectedIds: Set<string> } | null>(null)
+  // detections where a retry returned no new proposals
+  const [retryNoResult, setRetryNoResult] = useState<Set<number>>(new Set())
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -100,8 +104,17 @@ export function ScanPage() {
     }
   }, [mode])
 
+  // In retry mode force card-frame guide regardless of the user's scanType setting
+  const effectiveScanType = retryCtx ? 'card' : scanType
+
   // Reset search whenever the sheet opens/closes
   useEffect(() => { setSheetSearchQuery('') }, [candidateSheet])
+
+  // Open camera automatically when a retry is initiated
+  useEffect(() => {
+    if (retryCtx && mode !== 'scanning') startCamera()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryCtx])
 
   // Live catalog search inside the candidate sheet
   const sheetSearchResults = useMemo((): ScoredCard[] => {
@@ -149,6 +162,43 @@ export function ScanPage() {
       setMode('error')
     }
   }, [catalog, checkApiKey, aiModel, scanType])
+
+  // Re-scan a single card from a page result, excluding already-rejected proposals.
+  const runRetryRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
+    const ctx = retryCtx
+    if (!ctx || !catalog) return
+    const key = checkApiKey()
+    if (!key) return
+    setMode('recognizing')
+    try {
+      const newCandidates = await recognizeCardWithClaudeScored(canvas, key, catalog, aiModel, ctx.rejectedIds)
+      if (newCandidates.length > 0) {
+        const updated = pageResult.map((d, i) => i === ctx.detectionIdx ? newCandidates : d)
+        setPageResult(updated)
+        // Deselect the retried detection — user should confirm the new proposals
+        setPageSelected(prev => {
+          const next = new Set(prev)
+          const oldBest = pageResult[ctx.detectionIdx]?.[0]?.card.id
+          if (oldBest) next.delete(oldBest)
+          return next
+        })
+        setRetryNoResult(prev => { const s = new Set(prev); s.delete(ctx.detectionIdx); return s })
+        saveScan({ mode: 'page-result', scanType, result: [], pageResult: updated, preview: preview ?? null })
+      } else {
+        setRetryNoResult(prev => new Set([...prev, ctx.detectionIdx]))
+      }
+    } catch {
+      setRetryNoResult(prev => new Set([...prev, ctx.detectionIdx]))
+    } finally {
+      setRetryCtx(null)
+      setMode('page-result')
+    }
+  }, [retryCtx, catalog, checkApiKey, aiModel, pageResult, scanType, preview])
+
+  const startRetry = useCallback((detectionIdx: number, rejectedIds: Set<string>) => {
+    setRetryCtx({ detectionIdx, rejectedIds })
+    setCandidateSheet(null)
+  }, [])
 
   const startCamera = useCallback(async () => {
     try {
@@ -228,9 +278,10 @@ export function ScanPage() {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
     setPreview(dataUrl)
     stopCamera()
-    if (scanType === 'page') await runPageRecognition(canvas, dataUrl)
+    if (retryCtx) await runRetryRecognition(canvas)
+    else if (scanType === 'page') await runPageRecognition(canvas, dataUrl)
     else await runRecognition(canvas, dataUrl)
-  }, [catalog, scanType, stopCamera, runRecognition, runPageRecognition])
+  }, [catalog, scanType, stopCamera, runRecognition, runPageRecognition, retryCtx, runRetryRecognition])
 
   const pickImage = useCallback(() => {
     fileInputRef.current?.click()
@@ -266,6 +317,8 @@ export function ScanPage() {
     setPageResult([])
     setPageSelected(new Set())
     setCandidateSheet(null)
+    setRetryCtx(null)
+    setRetryNoResult(new Set())
     setError('')
     setPreview(null)
     setLightbox(null)
@@ -442,6 +495,32 @@ export function ScanPage() {
                   })
                 })()}
               </div>
+              {/* ── Retry section ── */}
+              <div className="mt-4 pt-4 border-t border-slate-800">
+                <p className="text-xs font-semibold text-slate-400 mb-2">Aucune de ces cartes n'est la bonne ?</p>
+                <ol className="text-xs text-slate-500 list-decimal list-inside space-y-1 mb-3">
+                  <li>Tapez son nom dans la barre de recherche ci-dessus</li>
+                  <li>Ou relancez le scan directement sur cette carte&nbsp;:</li>
+                </ol>
+                <ul className="text-xs text-slate-600 mb-3 ml-4 space-y-0.5">
+                  <li>→ pointez l'appareil sur cette carte seule</li>
+                  <li>→ les {pageResult[candidateSheet].length} proposition{pageResult[candidateSheet].length > 1 ? 's' : ''} actuelles seront exclues</li>
+                  <li>→ répétable 2–3 fois jusqu'à trouver la bonne carte</li>
+                </ul>
+                <button
+                  onClick={() => startRetry(candidateSheet, new Set(pageResult[candidateSheet].map(sc => sc.card.id)))}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
+                             bg-brand-500/10 border border-brand-500/30 text-sm text-brand-300
+                             font-medium active:bg-brand-500/20 transition-colors"
+                >
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Relancer le scan pour cette carte
+                </button>
+              </div>
+
               <button
                 onClick={() => setCandidateSheet(null)}
                 className="w-full mt-3 py-2.5 text-sm text-slate-500 hover:text-slate-300 transition-colors"
@@ -461,8 +540,18 @@ export function ScanPage() {
       {/* Video — always mounted */}
       <div className={mode === 'scanning' ? 'relative' : 'hidden'}>
         <video ref={videoRef} playsInline muted className="w-full aspect-[3/4] object-cover bg-black" />
+        {/* Retry context banner */}
+        {retryCtx !== null && (
+          <div className="absolute top-4 inset-x-4 z-10 bg-slate-900/95 backdrop-blur rounded-2xl
+                          border border-brand-500/50 px-4 py-3">
+            <p className="text-sm font-semibold text-brand-300 text-center">Relance du scan</p>
+            <p className="text-xs text-slate-400 text-center mt-0.5">
+              {retryCtx.rejectedIds.size} proposition{retryCtx.rejectedIds.size > 1 ? 's' : ''} exclue{retryCtx.rejectedIds.size > 1 ? 's' : ''} · cadrez précisément cette carte
+            </p>
+          </div>
+        )}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          {scanType === 'card'
+          {effectiveScanType === 'card'
             ? <div ref={guideFrameRef} className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
             : <div ref={guideFrameRef} className="absolute inset-4 border-2 border-brand-400 rounded-xl opacity-60" />
           }
@@ -473,7 +562,7 @@ export function ScanPage() {
             <div className="w-12 h-12 rounded-full bg-brand-500" />
           </button>
           <span className="text-xs text-white/70 bg-black/40 rounded px-2 py-0.5">
-            {scanType === 'page' ? 'Cadrez la page entière' : 'Centrez la carte'}
+            {retryCtx ? 'Cadrez précisément la carte' : effectiveScanType === 'page' ? 'Cadrez la page entière' : 'Centrez la carte'}
           </span>
         </div>
       </div>
@@ -542,17 +631,21 @@ export function ScanPage() {
 
       {mode === 'recognizing' && (
         <div className="flex flex-col items-center justify-center py-16 gap-5 px-8 text-center">
-          {preview && scanType === 'card' && (
+          {preview && effectiveScanType === 'card' && (
             <img src={preview} alt="carte" className="w-36 rounded-xl shadow-lg opacity-60 object-contain max-h-48" />
           )}
-          {preview && scanType === 'page' && (
+          {preview && effectiveScanType === 'page' && (
             <img src={preview} alt="page" className="w-full max-h-48 rounded-xl shadow-lg opacity-60 object-contain" />
           )}
           <Spinner />
           <p className="text-sm text-slate-300">
-            {scanType === 'page' ? 'Analyse de la page en cours…' : 'Identification en cours…'}
+            {retryCtx ? 'Relance en cours…' : effectiveScanType === 'page' ? 'Analyse de la page en cours…' : 'Identification en cours…'}
           </p>
-          <p className="text-xs text-slate-500">{modelLabel} analyse {scanType === 'page' ? 'les cartes' : 'la carte'}</p>
+          <p className="text-xs text-slate-500">
+            {retryCtx
+              ? `${retryCtx.rejectedIds.size} proposition${retryCtx.rejectedIds.size > 1 ? 's' : ''} exclue${retryCtx.rejectedIds.size > 1 ? 's' : ''} · ${modelLabel}`
+              : `${modelLabel} analyse ${effectiveScanType === 'page' ? 'les cartes' : 'la carte'}`}
+          </p>
           <button onClick={reset} className="text-xs text-slate-600 underline mt-1">Annuler</button>
         </div>
       )}
@@ -688,6 +781,9 @@ export function ScanPage() {
                           {best.score > 0 ? `${best.score}% de confiance` : 'Sélection manuelle'}
                         </span>
                         {hasAlts && best.score > 0 && <span className="text-[11px] text-slate-500">· {candidates.length - 1} autre{candidates.length > 2 ? 's' : ''}</span>}
+                        {retryNoResult.has(detectionIdx) && (
+                          <span className="text-[11px] text-amber-500/80">· aucune nouvelle proposition — recherche manuelle</span>
+                        )}
                       </div>
                     </div>
                     {/* Chevron only if there are alternatives */}
