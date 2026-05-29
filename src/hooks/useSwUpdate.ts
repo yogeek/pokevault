@@ -1,38 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
 
-const UPDATE_INTERVAL_MS = 5 * 60 * 1000  // poll every 5 minutes
+const UPDATE_INTERVAL_MS = 5 * 60 * 1000
 
 export function useSwUpdate() {
-  const [needsRefresh, setNeedsRefresh] = useState(false)
+  const registrationRef = useRef<ServiceWorkerRegistration | undefined>(undefined)
+
+  const {
+    needRefresh: [needsRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegisteredSW(_swUrl, registration) {
+      registrationRef.current = registration
+    },
+  })
 
   useEffect(() => {
-    const sw = navigator.serviceWorker
-    if (!sw) return
-
-    // Only flag an update when a controller was already present (not the first install)
-    const hadController = !!sw.controller
-    const onControllerChange = () => { if (hadController) setNeedsRefresh(true) }
-    sw.addEventListener('controllerchange', onControllerChange)
-
-    // Actively trigger an update check so the browser fetches the new SW immediately.
-    // Without this, the browser may wait up to 24 h before checking.
-    const triggerCheck = () => sw.getRegistration().then(r => r?.update())
-
-    // Check on mount, on tab-focus, and on visibility restore
-    triggerCheck()
-    window.addEventListener('focus', triggerCheck)
-    document.addEventListener('visibilitychange', triggerCheck)
-
-    // Fallback poll for tabs left open in the background
-    const interval = setInterval(triggerCheck, UPDATE_INTERVAL_MS)
-
+    const check = () => registrationRef.current?.update()
+    check()
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    const interval = setInterval(check, UPDATE_INTERVAL_MS)
     return () => {
-      sw.removeEventListener('controllerchange', onControllerChange)
-      window.removeEventListener('focus', triggerCheck)
-      document.removeEventListener('visibilitychange', triggerCheck)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
       clearInterval(interval)
     }
   }, [])
 
-  return { needsRefresh, refresh: () => window.location.reload() }
+  return { needsRefresh, refresh: () => updateServiceWorker(true) }
 }
