@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
@@ -12,21 +12,38 @@ import type { CatalogCard } from '@/types'
 type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'page-result' | 'error'
 type ScanType = 'card' | 'page'
 
+interface LocationState {
+  scanResults?: CatalogCard[]
+  scanPreview?: string | null
+  scanType?: ScanType
+  pageResults?: CatalogCard[]
+  pageSelected?: string[]
+}
+
 export function ScanPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [mode, setMode] = useState<ScanMode>('idle')
-  const [scanType, setScanType] = useState<ScanType>('card')
-  const [result, setResult] = useState<CatalogCard[]>([])
-  const [pageResult, setPageResult] = useState<CatalogCard[]>([])
-  const [pageSelected, setPageSelected] = useState<Set<string>>(new Set())
+  // Restore state when coming back from card detail
+  const locationState = (location.state ?? {}) as LocationState
+  const [mode, setMode] = useState<ScanMode>(() => {
+    if (locationState.scanResults) return 'result'
+    if (locationState.pageResults) return 'page-result'
+    return 'idle'
+  })
+  const [scanType, setScanType] = useState<ScanType>(locationState.scanType ?? 'card')
+  const [result, setResult] = useState<CatalogCard[]>(locationState.scanResults ?? [])
+  const [pageResult, setPageResult] = useState<CatalogCard[]>(locationState.pageResults ?? [])
+  const [pageSelected, setPageSelected] = useState<Set<string>>(
+    new Set(locationState.pageSelected ?? locationState.pageResults?.map(c => c.id) ?? [])
+  )
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
-  const [preview, setPreview] = useState<string | null>(null)
+  const [preview, setPreview] = useState<string | null>(locationState.scanPreview ?? null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
 
@@ -319,7 +336,9 @@ export function ScanPage() {
             </p>
           )}
           {result.map(card => (
-            <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`)}
+            <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`, {
+              state: { scanResults: result, scanPreview: preview, scanType } satisfies LocationState,
+            })}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
               <img src={card.imageUrl} alt={cardName(card)} className="w-12 rounded object-cover"
                 onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }} />
