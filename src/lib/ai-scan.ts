@@ -56,7 +56,7 @@ export async function recognizeCardWithClaude(
             },
             {
               type: 'text',
-              text: 'Pokémon TCG card. Give the English Pokémon name and card number (X/Y format). JSON only, no explanation: {"name":"Pikachu","number":"58/102"}',
+              text: 'Pokémon TCG card. Give the English Pokémon name and the card number exactly as printed (may have leading zeros, e.g. "014/094"). JSON only: {"name":"Pikachu","number":"058/102"}',
             },
           ],
         }],
@@ -84,18 +84,29 @@ export async function recognizeCardWithClaude(
   const parsed = JSON.parse(jsonMatch[0]) as { name?: string; number?: string }
   const name = parsed.name?.trim() ?? ''
   const rawNumber = parsed.number?.replace(/\s/g, '') ?? ''
-  const numOnly = rawNumber.split('/')[0]
+  const [rawNum, rawTotal] = rawNumber.split('/')
+  // Normalise to integers — handles "014" vs "14"
+  const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
+  const totalInt = rawTotal ? parseInt(rawTotal, 10) : NaN
 
-  // Name match first
-  let results = name ? searchCards(catalog, name, 5) : []
+  // Fetch ALL name matches so number narrowing works across all sets
+  let results = name ? searchCards(catalog, name, catalog.cards.length) : []
 
-  // Narrow by number if present
-  if (numOnly && results.length > 0) {
-    const narrowed = results.filter(c => c.number === numOnly)
+  // Narrow by number (numeric comparison handles zero-padding)
+  if (!isNaN(numInt) && results.length > 0) {
+    const narrowed = results.filter(c => parseInt(c.number, 10) === numInt)
     if (narrowed.length > 0) results = narrowed
-  } else if (numOnly && results.length === 0) {
-    // Fallback: number-only search
-    results = catalog.cards.filter(c => c.number === numOnly).slice(0, 5)
+  } else if (!isNaN(numInt) && results.length === 0) {
+    results = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
+  }
+
+  // Sort: cards whose set total matches the printed total come first (e.g. 014/094 → total=94)
+  if (!isNaN(totalInt) && results.length > 1) {
+    results.sort((a, b) => {
+      const aMatch = a.total === totalInt ? 0 : 1
+      const bMatch = b.total === totalInt ? 0 : 1
+      return aMatch - bMatch
+    })
   }
 
   return results.slice(0, 5)
