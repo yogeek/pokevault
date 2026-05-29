@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
@@ -36,6 +36,8 @@ function clearScan() { sessionStorage.removeItem(STORAGE_KEY) }
 
 export function ScanPage() {
   const navigate = useNavigate()
+  const { state: locationState } = useLocation()
+  const returnTo = (locationState as { returnTo?: string } | null)?.returnTo ?? '/add'
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -367,7 +369,7 @@ export function ScanPage() {
             </p>
           )}
           {result.map(card => (
-            <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`, { state: { fromScan: true } })}
+            <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
               <img
                 src={card.imageUrl} alt={cardName(card)}

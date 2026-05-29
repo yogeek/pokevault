@@ -11,6 +11,7 @@ import { SharePage } from '@/pages/SharePage'
 import { SharedViewPage } from '@/pages/SharedViewPage'
 import { SharedViewsPage } from '@/pages/SharedViewsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { CheckCardPage } from '@/pages/CheckCardPage'
 import { useCatalogStore } from '@/stores/catalog'
 import { initDB } from '@/db'
 
@@ -45,6 +46,7 @@ export default function App() {
       <Routes>
         <Route path="/"               element={<CollectionPage />} />
         <Route path="/add"            element={<AddCardPage />} />
+        <Route path="/check"          element={<CheckCardPage />} />
         <Route path="/card/:cardId"   element={<CardDetailPage />} />
         <Route path="/wishlist"       element={<WishlistPage />} />
         <Route path="/scan"           element={<ScanPage />} />

@@ -144,6 +144,31 @@ export function AddCardPage() {
       {/* Search */}
       {!selected && (
         <div className="space-y-3">
+          {/* Scanner shortcut */}
+          <button
+            onClick={() => navigate('/scan')}
+            className="w-full flex items-center gap-3 bg-brand-500/10 border border-brand-500/30
+                       rounded-2xl px-4 py-3 text-left"
+          >
+            <svg className="w-6 h-6 text-brand-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-brand-300">Scanner une carte</p>
+              <p className="text-xs text-brand-400/60">Reconnaissance automatique par IA</p>
+            </div>
+            <svg className="w-4 h-4 text-brand-500 ml-auto flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-3 text-xs text-slate-600">
+            <div className="flex-1 h-px bg-slate-800" />
+            <span>ou rechercher par nom</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+
           <input
             type="search"
             placeholder="Nom, numéro ou set…"

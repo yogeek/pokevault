@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
@@ -14,12 +14,14 @@ type SortKey = 'date' | 'name' | 'set' | 'qty'
 type ViewMode = 'grid' | 'list'
 
 export function CollectionPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [view, setView] = useState<ViewMode>('grid')
   const [filterSet, setFilterSet] = useState('')
   const [filterCondition, setFilterCondition] = useState<Condition | ''>('')
   const [sort, setSort] = useState<SortKey>('date')
   const [showFilters, setShowFilters] = useState(false)
+  const [showAddSheet, setShowAddSheet] = useState(false)
 
   const catalog = useCatalogStore(s => s.catalog)
   const showExportReminder = useExportReminder()
@@ -317,9 +319,59 @@ export function CollectionPage() {
         </div>
       )}
 
+      {/* Add bottom sheet */}
+      {showAddSheet && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setShowAddSheet(false)} />
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-slate-900 rounded-t-3xl border-t border-slate-800
+                          pb-[env(safe-area-inset-bottom)] max-w-lg mx-auto">
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            </div>
+            <div className="px-4 pt-2 pb-6 space-y-3">
+              <h2 className="text-base font-semibold text-slate-200 text-center pb-1">Ajouter / Vérifier</h2>
+              <button
+                onClick={() => { setShowAddSheet(false); navigate('/add') }}
+                className="w-full flex items-center gap-4 bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 text-left transition-colors"
+              >
+                <div className="w-11 h-11 rounded-xl bg-brand-500/20 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-200">Ajouter à ma collection</p>
+                  <p className="text-xs text-slate-400">Recherche par nom ou scan IA</p>
+                </div>
+              </button>
+              <button
+                onClick={() => { setShowAddSheet(false); navigate('/check') }}
+                className="w-full flex items-center gap-4 bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 text-left transition-colors"
+              >
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-200">Vérifier une carte</p>
+                  <p className="text-xs text-slate-400">Est-elle déjà dans votre collection ?</p>
+                </div>
+              </button>
+              <button
+                onClick={() => setShowAddSheet(false)}
+                className="w-full py-2.5 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* FAB */}
-      <Link
-        to="/add"
+      <button
+        onClick={() => setShowAddSheet(true)}
         aria-label="Ajouter une carte"
         className="fixed bottom-20 right-4 z-40 w-14 h-14 bg-brand-500 hover:bg-brand-600
                    rounded-full shadow-lg flex items-center justify-center transition-colors
@@ -328,7 +380,7 @@ export function CollectionPage() {
         <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
-      </Link>
+      </button>
     </div>
   )
 }
