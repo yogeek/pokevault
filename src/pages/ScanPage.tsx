@@ -2,13 +2,15 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
-import { recognizeCardWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
+import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
+import { db } from '@/db'
 import type { AiModelId } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
 import type { CatalogCard } from '@/types'
 
-type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'error'
+type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'page-result' | 'error'
+type ScanType = 'card' | 'page'
 
 export function ScanPage() {
   const navigate = useNavigate()
@@ -18,10 +20,13 @@ export function ScanPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [mode, setMode] = useState<ScanMode>('idle')
+  const [scanType, setScanType] = useState<ScanType>('card')
   const [result, setResult] = useState<CatalogCard[]>([])
+  const [pageResult, setPageResult] = useState<CatalogCard[]>([])
+  const [pageSelected, setPageSelected] = useState<Set<string>>(new Set())
+  const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
-  // undefined = still loading from DB; null = loaded but not set; string = ready
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
 
@@ -35,7 +40,6 @@ export function ScanPage() {
     return () => window.removeEventListener('focus', reload)
   }, [])
 
-  // Stop camera stream when component unmounts (e.g. user navigates away mid-scan)
   useEffect(() => {
     return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
   }, [])
@@ -50,29 +54,48 @@ export function ScanPage() {
     }
   }, [mode])
 
+  const checkApiKey = useCallback((): string | null => {
+    if (aiKey === undefined) return null
+    if (!aiKey) { setError('no-api-key'); setMode('error'); return null }
+    return aiKey
+  }, [aiKey])
+
   const runRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
     if (!catalog) return
-    if (aiKey === undefined) return  // still loading from DB
-    if (!aiKey) {
-      setError('no-api-key')
-      setMode('error')
-      return
-    }
+    const key = checkApiKey()
+    if (!key) return
     setMode('recognizing')
     try {
-      const cards = await recognizeCardWithClaude(canvas, aiKey, catalog, aiModel)
+      const cards = await recognizeCardWithClaude(canvas, key, catalog, aiModel)
       setResult(cards)
       setMode('result')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
     }
-  }, [catalog, aiKey, aiModel])
+  }, [catalog, checkApiKey, aiModel])
+
+  const runPageRecognition = useCallback(async (canvas: HTMLCanvasElement) => {
+    if (!catalog) return
+    const key = checkApiKey()
+    if (!key) return
+    setMode('recognizing')
+    try {
+      const cards = await recognizePageWithClaude(canvas, key, catalog, aiModel)
+      setPageResult(cards)
+      setPageSelected(new Set(cards.map(c => c.id)))
+      setAddedCount(0)
+      setMode('page-result')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue')
+      setMode('error')
+    }
+  }, [catalog, checkApiKey, aiModel])
 
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 } },
+        video: { facingMode: 'environment', width: { ideal: 1920 } },
       })
       streamRef.current = stream
       setPreview(null)
@@ -97,8 +120,9 @@ export function ScanPage() {
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
     stopCamera()
-    await runRecognition(canvas)
-  }, [catalog, stopCamera, runRecognition])
+    if (scanType === 'page') await runPageRecognition(canvas)
+    else await runRecognition(canvas)
+  }, [catalog, scanType, stopCamera, runRecognition, runPageRecognition])
 
   const pickImage = useCallback(() => {
     fileInputRef.current?.click()
@@ -119,32 +143,60 @@ export function ScanPage() {
         canvas.width = img.naturalWidth
         canvas.height = img.naturalHeight
         canvas.getContext('2d')!.drawImage(img, 0, 0)
-        runRecognition(canvas)
+        if (scanType === 'page') runPageRecognition(canvas)
+        else runRecognition(canvas)
       }
       img.src = dataUrl
     }
     reader.readAsDataURL(file)
-  }, [catalog, runRecognition])
+  }, [catalog, scanType, runRecognition, runPageRecognition])
 
   const reset = useCallback(() => {
     setResult([])
+    setPageResult([])
+    setPageSelected(new Set())
     setError('')
     setPreview(null)
     setMode('idle')
   }, [])
 
+  const toggleCard = useCallback((id: string) => {
+    setPageSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback(() => {
+    setPageSelected(prev =>
+      prev.size === pageResult.length ? new Set() : new Set(pageResult.map(c => c.id))
+    )
+  }, [pageResult])
+
+  const addSelectedToCollection = useCallback(async () => {
+    const toAdd = pageResult.filter(c => pageSelected.has(c.id))
+    await Promise.all(toAdd.map(card =>
+      db.inventory.add({
+        cardId: card.id,
+        condition: 'NM' as const,
+        language: 'FR' as const,
+        variant: 'normal' as const,
+        qty: 1,
+        addedAt: new Date().toISOString(),
+      })
+    ))
+    setAddedCount(toAdd.length)
+    setPageSelected(new Set())
+  }, [pageResult, pageSelected])
+
   const aiLoading = aiKey === undefined
   const aiConfigured = !!aiKey
+  const modelLabel = AI_MODELS.find(m => m.id === aiModel)?.label ?? 'Claude'
 
   return (
     <div className="pb-24">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleImageFile}
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
 
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
         <h1 className="text-xl font-bold">Scanner</h1>
@@ -153,65 +205,80 @@ export function ScanPage() {
 
       {/* Video — always mounted */}
       <div className={mode === 'scanning' ? 'relative' : 'hidden'}>
-        <video ref={videoRef} playsInline muted
-          className="w-full aspect-[3/4] object-cover bg-black" />
+        <video ref={videoRef} playsInline muted className="w-full aspect-[3/4] object-cover bg-black" />
+        {/* Guide overlay — card frame for single, full frame for page */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
+          {scanType === 'card'
+            ? <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
+            : <div className="absolute inset-4 border-2 border-brand-400 rounded-xl opacity-60" />
+          }
         </div>
         <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2">
           <button onClick={capture}
             className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
             <div className="w-12 h-12 rounded-full bg-brand-500" />
           </button>
-          <span className="text-xs text-white/70 bg-black/40 rounded px-2 py-0.5">Appuyez pour capturer</span>
+          <span className="text-xs text-white/70 bg-black/40 rounded px-2 py-0.5">
+            {scanType === 'page' ? 'Cadrez la page entière' : 'Centrez la carte'}
+          </span>
         </div>
       </div>
 
       {mode === 'idle' && (
         <div className="flex flex-col items-center py-8 gap-5 px-6">
           {!aiLoading && !aiConfigured && (
-            <button
-              onClick={() => navigate('/settings')}
-              className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3
-                         text-left flex items-start gap-3"
-            >
+            <button onClick={() => navigate('/settings')}
+              className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 text-left flex items-start gap-3">
               <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round"
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div>
                 <p className="text-sm font-medium text-amber-300">Clé API non configurée</p>
-                <p className="text-xs text-amber-400/70 mt-0.5">
-                  La reconnaissance automatique nécessite une clé Anthropic.
-                  Appuyez pour configurer →
-                </p>
+                <p className="text-xs text-amber-400/70 mt-0.5">Appuyez pour configurer →</p>
               </div>
             </button>
           )}
 
           {!catalog ? (
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Spinner /> Chargement du catalogue…
-            </div>
+            <div className="flex items-center gap-2 text-slate-400 text-sm"><Spinner /> Chargement du catalogue…</div>
           ) : (
-            <div className="w-full space-y-3">
-              <button onClick={startCamera}
-                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round"
-                    d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M4 8a2 2 0 012-2h9a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" />
-                </svg>
-                Caméra
-              </button>
-              <button onClick={pickImage}
-                className="w-full bg-slate-800 text-slate-200 py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 border border-slate-700">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round"
-                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Charger une photo
-              </button>
-            </div>
+            <>
+              {/* Scan type toggle */}
+              <div className="w-full flex rounded-xl overflow-hidden border border-slate-700">
+                {(['card', 'page'] as ScanType[]).map(t => (
+                  <button key={t} onClick={() => setScanType(t)}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors
+                      ${scanType === t ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                    {t === 'card' ? '🃏 Carte' : '📖 Page de classeur'}
+                  </button>
+                ))}
+              </div>
+
+              {scanType === 'page' && (
+                <p className="text-xs text-slate-500 text-center -mt-2">
+                  Photographiez une page entière — jusqu'à 16 cartes identifiées en une seule requête
+                </p>
+              )}
+
+              <div className="w-full space-y-3">
+                <button onClick={startCamera}
+                  className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M4 8a2 2 0 012-2h9a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" />
+                  </svg>
+                  Caméra
+                </button>
+                <button onClick={pickImage}
+                  className="w-full bg-slate-800 text-slate-200 py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 border border-slate-700">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Charger une photo
+                </button>
+              </div>
+            </>
           )}
 
           <button onClick={() => navigate('/add')} className="text-xs text-slate-600 underline">
@@ -222,15 +289,17 @@ export function ScanPage() {
 
       {mode === 'recognizing' && (
         <div className="flex flex-col items-center justify-center py-16 gap-5 px-8 text-center">
-          {preview && (
-            <img src={preview} alt="carte"
-              className="w-36 rounded-xl shadow-lg opacity-60 object-contain max-h-48" />
+          {preview && scanType === 'card' && (
+            <img src={preview} alt="carte" className="w-36 rounded-xl shadow-lg opacity-60 object-contain max-h-48" />
+          )}
+          {preview && scanType === 'page' && (
+            <img src={preview} alt="page" className="w-full max-h-48 rounded-xl shadow-lg opacity-60 object-contain" />
           )}
           <Spinner />
-          <p className="text-sm text-slate-300">Identification en cours…</p>
-          <p className="text-xs text-slate-500">
-            {AI_MODELS.find(m => m.id === aiModel)?.label ?? 'Claude'} analyse la carte
+          <p className="text-sm text-slate-300">
+            {scanType === 'page' ? 'Analyse de la page en cours…' : 'Identification en cours…'}
           </p>
+          <p className="text-xs text-slate-500">{modelLabel} analyse {scanType === 'page' ? 'les cartes' : 'la carte'}</p>
           <button onClick={reset} className="text-xs text-slate-600 underline mt-1">Annuler</button>
         </div>
       )}
@@ -238,29 +307,22 @@ export function ScanPage() {
       {mode === 'result' && (
         <div className="px-4 py-4 space-y-3">
           {preview && (
-            <img src={preview} alt="carte scannée"
-              className="w-full max-h-48 object-contain rounded-xl bg-slate-900" />
+            <img src={preview} alt="carte scannée" className="w-full max-h-48 object-contain rounded-xl bg-slate-900" />
           )}
           <h2 className="text-sm font-semibold text-slate-400">
-            {result.length > 0
-              ? `${result.length} correspondance${result.length > 1 ? 's' : ''}`
-              : 'Aucune correspondance'}
+            {result.length > 0 ? `${result.length} correspondance${result.length > 1 ? 's' : ''}` : 'Aucune correspondance'}
           </h2>
           {result.length === 0 && (
             <p className="text-sm text-slate-500 text-center py-2">
               Carte non reconnue.{' '}
-              <button onClick={() => navigate('/add')} className="text-brand-400 underline">
-                Recherche manuelle →
-              </button>
+              <button onClick={() => navigate('/add')} className="text-brand-400 underline">Recherche manuelle →</button>
             </p>
           )}
           {result.map(card => (
             <button key={card.id} onClick={() => navigate(`/add?cardId=${card.id}`)}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
-              <img src={card.imageUrl} alt={cardName(card)}
-                className="w-12 rounded object-cover"
-                onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-              />
+              <img src={card.imageUrl} alt={cardName(card)} className="w-12 rounded object-cover"
+                onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }} />
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{cardName(card)}</p>
                 <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
@@ -271,14 +333,83 @@ export function ScanPage() {
             </button>
           ))}
           <div className="flex gap-2 pt-1">
-            <button onClick={reset}
-              className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
-              Nouveau scan
+            <button onClick={reset} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">Nouveau scan</button>
+            <button onClick={pickImage} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">Autre photo</button>
+          </div>
+        </div>
+      )}
+
+      {mode === 'page-result' && (
+        <div className="px-4 py-4 space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold">
+                {pageResult.length} carte{pageResult.length > 1 ? 's' : ''} identifiée{pageResult.length > 1 ? 's' : ''}
+              </h2>
+              <p className="text-xs text-slate-500">{pageSelected.size} sélectionnée{pageSelected.size > 1 ? 's' : ''}</p>
+            </div>
+            <button onClick={toggleAll} className="text-xs text-brand-400 hover:underline">
+              {pageSelected.size === pageResult.length ? 'Tout désélectionner' : 'Tout sélectionner'}
             </button>
-            <button onClick={pickImage}
-              className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
-              Autre photo
-            </button>
+          </div>
+
+          {pageResult.length === 0 && (
+            <div className="text-center py-8 space-y-2">
+              <p className="text-slate-400">Aucune carte reconnue.</p>
+              <p className="text-xs text-slate-500">Essayez avec un meilleur éclairage ou un modèle plus puissant.</p>
+            </div>
+          )}
+
+          {/* Card list */}
+          <div className="space-y-2">
+            {pageResult.map(card => (
+              <button key={card.id} onClick={() => toggleCard(card.id)}
+                className={`w-full flex items-center gap-3 rounded-xl p-3 text-left border transition-colors
+                  ${pageSelected.has(card.id)
+                    ? 'bg-brand-500/10 border-brand-500/40'
+                    : 'bg-slate-800 border-transparent opacity-50'}`}>
+                <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center
+                  ${pageSelected.has(card.id) ? 'bg-brand-500 border-brand-500' : 'border-slate-600'}`}>
+                  {pageSelected.has(card.id) && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <img src={card.imageUrl} alt={cardName(card)} className="w-10 rounded object-cover flex-shrink-0"
+                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate text-sm">{cardName(card)}</p>
+                  <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Success message */}
+          {addedCount > 0 && (
+            <p className="text-green-400 text-sm text-center">
+              ✅ {addedCount} carte{addedCount > 1 ? 's' : ''} ajoutée{addedCount > 1 ? 's' : ''} à la collection !
+            </p>
+          )}
+
+          {/* Actions */}
+          <div className="space-y-2 pt-1">
+            {pageSelected.size > 0 && (
+              <button onClick={addSelectedToCollection}
+                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold">
+                Ajouter {pageSelected.size} carte{pageSelected.size > 1 ? 's' : ''} à la collection
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button onClick={reset} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
+                Nouveau scan
+              </button>
+              <button onClick={pickImage} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400">
+                Autre photo
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -296,10 +427,7 @@ export function ScanPage() {
                 La reconnaissance automatique utilise Claude Vision IA.
                 Configurez votre clé Anthropic dans les paramètres.
               </p>
-              <button
-                onClick={() => navigate('/settings')}
-                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold"
-              >
+              <button onClick={() => navigate('/settings')} className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold">
                 Configurer dans Paramètres
               </button>
               <button onClick={reset} className="text-xs text-slate-500 underline">Retour</button>

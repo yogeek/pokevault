@@ -2,11 +2,12 @@ import type { CatalogCard } from '@/types'
 import type { CatalogData } from './catalog'
 import { searchCards } from './catalog'
 
-const MAX_DIM = 800
+const MAX_DIM      = 800
+const MAX_DIM_PAGE = 2000
 
-function toJpegBase64(canvas: HTMLCanvasElement): string {
+function toJpegBase64(canvas: HTMLCanvasElement, maxDim = MAX_DIM): string {
   const { width: w, height: h } = canvas
-  const scale = Math.min(1, MAX_DIM / Math.max(w, h))
+  const scale = Math.min(1, maxDim / Math.max(w, h))
   const out = document.createElement('canvas')
   out.width = Math.round(w * scale)
   out.height = Math.round(h * scale)
@@ -29,7 +30,7 @@ export async function recognizeCardWithClaude(
   catalog: CatalogData,
   model: AiModelId = DEFAULT_AI_MODEL,
 ): Promise<CatalogCard[]> {
-  const imageData = toJpegBase64(canvas)
+  const imageData = toJpegBase64(canvas, MAX_DIM)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
 
@@ -110,4 +111,97 @@ export async function recognizeCardWithClaude(
   }
 
   return results.slice(0, 5)
+}
+
+function matchOne(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
+  const [rawNum, rawTotal] = rawNumber.replace(/\s/g, '').split('/')
+  const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
+  const totalInt = rawTotal ? parseInt(rawTotal, 10) : NaN
+
+  let results = name ? searchCards(catalog, name, catalog.cards.length) : []
+
+  if (!isNaN(numInt) && results.length > 0) {
+    const narrowed = results.filter(c => parseInt(c.number, 10) === numInt)
+    if (narrowed.length > 0) results = narrowed
+  } else if (!isNaN(numInt) && results.length === 0) {
+    results = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
+  }
+
+  if (!isNaN(totalInt) && results.length > 1) {
+    results.sort((a, b) => (a.total === totalInt ? 0 : 1) - (b.total === totalInt ? 0 : 1))
+  }
+
+  return results[0] ?? null
+}
+
+export async function recognizePageWithClaude(
+  canvas: HTMLCanvasElement,
+  apiKey: string,
+  catalog: CatalogData,
+  model: AiModelId = DEFAULT_AI_MODEL,
+): Promise<CatalogCard[]> {
+  const imageData = toJpegBase64(canvas, MAX_DIM_PAGE)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60_000)
+
+  let res: Response
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1500,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: imageData },
+            },
+            {
+              type: 'text',
+              text: 'This is a page from a Pokémon TCG binder. Identify every visible card. For each card give the English name and number exactly as printed (preserve leading zeros). Skip cards you cannot read clearly. Return ONLY valid JSON, no explanation: {"cards":[{"name":"Pikachu","number":"058/102"},{"name":"Charizard","number":"004/102"}]}',
+            },
+          ],
+        }],
+      }),
+    })
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw new Error('Délai dépassé (>60s) — vérifiez votre connexion')
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
+    throw new Error(err.error?.message ?? `Erreur API ${res.status}`)
+  }
+
+  const data = await res.json() as { content: { text: string }[] }
+  const text = data.content[0]?.text ?? ''
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error(`Réponse illisible : ${text.slice(0, 80)}`)
+
+  const parsed = JSON.parse(jsonMatch[0]) as { cards?: { name?: string; number?: string }[] }
+  const items = parsed.cards ?? []
+
+  const results: CatalogCard[] = []
+  for (const item of items) {
+    const name   = item.name?.trim()   ?? ''
+    const number = item.number?.trim() ?? ''
+    if (!name && !number) continue
+    const match = matchOne(catalog, name, number)
+    if (match && !results.find(r => r.id === match.id)) results.push(match)
+  }
+
+  return results
 }
