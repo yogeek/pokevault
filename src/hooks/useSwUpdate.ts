@@ -1,22 +1,26 @@
-import { useEffect, useRef } from 'react'
-import { useRegisterSW } from 'virtual:pwa-register/react'
+import { useEffect, useState } from 'react'
 
 const UPDATE_INTERVAL_MS = 5 * 60 * 1000
+declare const __APP_BUILD__: string
 
 export function useSwUpdate() {
-  const registrationRef = useRef<ServiceWorkerRegistration | undefined>(undefined)
-
-  const {
-    needRefresh: [needsRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onRegisteredSW(_swUrl, registration) {
-      registrationRef.current = registration
-    },
-  })
+  const [needsRefresh, setNeedsRefresh] = useState(false)
 
   useEffect(() => {
-    const check = () => registrationRef.current?.update()
+    const currentBuild = __APP_BUILD__
+    if (currentBuild === 'dev') return  // no banner in local dev
+
+    const url = `${import.meta.env.BASE_URL}version.json`
+
+    const check = async () => {
+      try {
+        const res = await fetch(url, { cache: 'no-store' })
+        if (!res.ok) return
+        const { build } = await res.json() as { build: string }
+        if (build !== currentBuild) setNeedsRefresh(true)
+      } catch { /* offline / network error — ignore */ }
+    }
+
     check()
     window.addEventListener('focus', check)
     document.addEventListener('visibilitychange', check)
@@ -28,5 +32,5 @@ export function useSwUpdate() {
     }
   }, [])
 
-  return { needsRefresh, refresh: () => updateServiceWorker(true) }
+  return { needsRefresh, refresh: () => window.location.reload() }
 }

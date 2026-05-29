@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 export default defineConfig({
@@ -17,8 +17,17 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: 'generate-version-json',
+      writeBundle() {
+        writeFileSync(
+          path.resolve(__dirname, 'dist/version.json'),
+          JSON.stringify({ build: process.env.VITE_APP_BUILD ?? 'dev' }),
+        )
+      },
+    },
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
         name: 'PokeVault',
@@ -45,10 +54,9 @@ export default defineConfig({
         },
       },
       workbox: {
-        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Large Tesseract assets (WASM, language data) are cached at runtime
-        globIgnores: ['**/tesseract/**'],
+        // version.json must never be precached — always fetched fresh from network
+        globIgnores: ['**/tesseract/**', 'version.json'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
