@@ -32,6 +32,10 @@ function loadScan(): PersistedScan | null {
     if (data.pageResult?.length > 0 && !Array.isArray(data.pageResult[0])) {
       return { ...data, pageResult: [] }
     }
+    // Don't restore an empty page-result — show the scan UI instead
+    if (data.mode === 'page-result' && (!data.pageResult || data.pageResult.length === 0)) {
+      return null
+    }
     return data
   } catch { return null }
 }
@@ -401,7 +405,12 @@ export function ScanPage() {
     setPageSelected(new Set())
     setCandidateSheet(null)
     setAddedCount(prev => prev + toAdd.length)
-    saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview })
+    // If nothing is left, wipe the saved state so revisiting the tab shows idle
+    if (remaining.length === 0) {
+      clearScan()
+    } else {
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview })
+    }
     setCelebrationCards(toAdd)
   }, [pageResult, pageSelected, scanType, preview])
 
