@@ -484,7 +484,8 @@ export function SettingsPage() {
           <div className="space-y-2">
             <p className="text-xs text-slate-400">
               La reconnaissance automatique envoie la photo de la carte à{' '}
-              <strong className="text-slate-200">Claude Haiku</strong> (Anthropic) qui identifie
+              <strong className="text-slate-200">
+                {AI_MODELS.find(m => m.id === aiModel)?.label ?? 'Claude'}</strong> (Anthropic) qui identifie
               le Pokémon et le numéro. Aucune donnée de collection n'est transmise.
             </p>
             <button

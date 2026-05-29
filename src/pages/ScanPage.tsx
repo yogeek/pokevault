@@ -293,7 +293,7 @@ export function ScanPage() {
               </svg>
               <p className="font-medium text-slate-200">Clé API manquante</p>
               <p className="text-sm text-slate-400">
-                La reconnaissance automatique utilise Claude Haiku (vision IA).
+                La reconnaissance automatique utilise Claude Vision IA.
                 Configurez votre clé Anthropic dans les paramètres.
               </p>
               <button
