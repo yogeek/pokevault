@@ -7,6 +7,7 @@ import { getSetting } from '@/db/settings'
 import { db } from '@/db'
 import type { AiModelId } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
+import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import type { CatalogCard } from '@/types'
 
 type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'page-result' | 'error'
@@ -44,6 +45,7 @@ export function ScanPage() {
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(locationState.scanPreview ?? null)
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
 
@@ -174,6 +176,7 @@ export function ScanPage() {
     setPageSelected(new Set())
     setError('')
     setPreview(null)
+    setLightbox(null)
     setMode('idle')
   }, [])
 
@@ -213,6 +216,7 @@ export function ScanPage() {
 
   return (
     <div className="pb-24">
+      {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
 
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
@@ -340,8 +344,12 @@ export function ScanPage() {
               state: { scanResults: result, scanPreview: preview, scanType } satisfies LocationState,
             })}
               className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
-              <img src={card.imageUrl} alt={cardName(card)} className="w-12 rounded object-cover"
-                onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }} />
+              <img
+                src={card.imageUrl} alt={cardName(card)}
+                className="w-12 rounded object-cover active:opacity-70"
+                onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+              />
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{cardName(card)}</p>
                 <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
@@ -396,8 +404,12 @@ export function ScanPage() {
                     </svg>
                   )}
                 </div>
-                <img src={card.imageUrl} alt={cardName(card)} className="w-10 rounded object-cover flex-shrink-0"
-                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }} />
+                <img
+                  src={card.imageUrl} alt={cardName(card)}
+                  className="w-10 rounded object-cover flex-shrink-0 active:opacity-70"
+                  onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate text-sm">{cardName(card)}</p>
                   <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}</p>
