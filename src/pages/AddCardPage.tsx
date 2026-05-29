@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { searchCards, cardName, cardSetName } from '@/lib/catalog'
-import { addInventoryEntry } from '@/db/inventory'
+import { addInventoryEntry, getInventoryForCard } from '@/db/inventory'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { Toast } from '@/components/ui/Toast'
-import type { Condition, Language, Variant, CatalogCard } from '@/types'
+import type { Condition, Language, Variant, CatalogCard, InventoryEntry } from '@/types'
 
 const CONDITIONS: Condition[] = ['M', 'NM', 'EX', 'GD', 'LP', 'PL', 'P']
 const LANGUAGES: Language[] = ['FR', 'EN', 'DE', 'ES', 'IT', 'JP', 'KO', 'PT', 'ZH']
@@ -22,6 +22,26 @@ const CONDITION_LABELS: Record<Condition, string> = {
   P:  'Poor',
 }
 
+const CONDITION_DESC: Record<Condition, string> = {
+  M:  'Parfaite, jamais jouée, sous blister',
+  NM: 'Quasi parfaite, imperceptibles traces à l\'œil nu',
+  EX: 'Très légères traces d\'usure, coins intacts',
+  GD: 'Usure légère visible, coins encore bien définis',
+  LP: 'Usure modérée, légères éraflures en surface',
+  PL: 'Usure importante, marques et éraflures bien visibles',
+  P:  'Endommagée : plis, déchirures ou trous',
+}
+
+const CONDITION_COLOR: Record<Condition, { selected: string; dot: string }> = {
+  M:  { selected: 'border-emerald-500 bg-emerald-500/20 text-emerald-400', dot: 'bg-emerald-400' },
+  NM: { selected: 'border-green-500 bg-green-500/20 text-green-400',       dot: 'bg-green-400'   },
+  EX: { selected: 'border-lime-500 bg-lime-500/20 text-lime-400',          dot: 'bg-lime-400'    },
+  GD: { selected: 'border-yellow-500 bg-yellow-500/20 text-yellow-400',    dot: 'bg-yellow-400'  },
+  LP: { selected: 'border-amber-500 bg-amber-500/20 text-amber-400',       dot: 'bg-amber-400'   },
+  PL: { selected: 'border-orange-500 bg-orange-500/20 text-orange-400',    dot: 'bg-orange-400'  },
+  P:  { selected: 'border-red-500 bg-red-500/20 text-red-400',             dot: 'bg-red-400'     },
+}
+
 export function AddCardPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -31,6 +51,7 @@ export function AddCardPage() {
 
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<CatalogCard | null>(null)
+  const [existingEntries, setExistingEntries] = useState<InventoryEntry[]>([])
   const [condition, setCondition] = useState<Condition>('NM')
   const [language, setLanguage] = useState<Language>('FR')
   const [variant, setVariant] = useState<Variant>('normal')
@@ -48,9 +69,22 @@ export function AddCardPage() {
     }
   }, [searchParams, catalog])
 
+  // Load existing inventory entries when a card is selected
+  useEffect(() => {
+    if (!selected) { setExistingEntries([]); return }
+    getInventoryForCard(selected.id).then(setExistingEntries)
+  }, [selected])
+
   const suggestions = catalog && query.length >= 2
     ? searchCards(catalog, query, 20)
     : []
+
+  const totalExisting = existingEntries.reduce((s, e) => s + e.qty, 0)
+
+  // True if the current form combination already exists (will increment qty, not create new entry)
+  const exactMatch = existingEntries.find(
+    e => e.condition === condition && e.language === language && e.variant === variant
+  )
 
   async function handleSave() {
     if (!selected) return
@@ -65,7 +99,6 @@ export function AddCardPage() {
         pricePaid: pricePaid ? parseFloat(pricePaid) : undefined,
       })
       if (fromScan) {
-        // Go back to scan results — sessionStorage keeps them alive
         navigate(-1)
       } else {
         setToast(true)
@@ -184,25 +217,66 @@ export function AddCardPage() {
             </div>
           </div>
 
+          {/* Already-in-collection warning */}
+          {existingEntries.length > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-amber-300">
+                Déjà dans votre collection · {totalExisting} exemplaire{totalExisting > 1 ? 's' : ''}
+              </p>
+              {existingEntries.map((e, i) => (
+                <p key={i} className="text-xs text-amber-400/80">
+                  {e.qty}× &nbsp;·&nbsp; {e.condition} &nbsp;·&nbsp; {e.language} &nbsp;·&nbsp; {e.variant}
+                </p>
+              ))}
+              {exactMatch && (
+                <p className="text-xs text-amber-400/60 pt-0.5 border-t border-amber-500/20">
+                  Cette combinaison existe déjà — la quantité sera mise à jour.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Condition */}
           <div>
-            <label className="text-sm font-medium text-slate-300 mb-2 block">État</label>
-            <div className="grid grid-cols-4 gap-2">
+            <label className="text-sm font-medium text-slate-300 mb-2 block">État de la carte</label>
+            <div className="grid grid-cols-4 gap-2 mb-2">
               {CONDITIONS.map(c => (
                 <button
                   key={c}
                   onClick={() => setCondition(c)}
-                  title={CONDITION_LABELS[c]}
-                  className={`py-2 rounded-xl text-sm font-medium border transition-colors
+                  className={`py-2 rounded-xl text-sm font-bold border transition-colors
                     ${condition === c
-                      ? 'border-brand-500 bg-brand-500/20 text-brand-400'
+                      ? CONDITION_COLOR[c].selected
                       : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}
                 >
                   {c}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-500 mt-1">{CONDITION_LABELS[condition]}</p>
+            {/* Selected condition description */}
+            <div className="flex items-start gap-2 bg-slate-800/60 rounded-xl px-3 py-2">
+              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5 ${CONDITION_COLOR[condition].dot}`} />
+              <div>
+                <span className="text-xs font-semibold text-slate-200">{CONDITION_LABELS[condition]}</span>
+                <span className="text-xs text-slate-400 ml-1.5">— {CONDITION_DESC[condition]}</span>
+              </div>
+            </div>
+            {/* Grading scale hint */}
+            <details className="mt-1.5">
+              <summary className="text-xs text-slate-600 cursor-pointer hover:text-slate-400 select-none">
+                Guide des états →
+              </summary>
+              <div className="mt-2 space-y-1.5 bg-slate-800/40 rounded-xl p-3">
+                {CONDITIONS.map(c => (
+                  <div key={c} className="flex items-start gap-2 text-xs">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${CONDITION_COLOR[c].dot}`} />
+                    <span className="font-semibold text-slate-300 w-6 shrink-0">{c}</span>
+                    <span className="font-medium text-slate-400 w-24 shrink-0">{CONDITION_LABELS[c]}</span>
+                    <span className="text-slate-500">{CONDITION_DESC[c]}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
 
           {/* Language + Variant inline */}
