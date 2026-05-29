@@ -5,7 +5,7 @@ import { searchCards, cardName, cardSetName } from '@/lib/catalog'
 import { addInventoryEntry, getInventoryForCard } from '@/db/inventory'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
-import { Toast } from '@/components/ui/Toast'
+import { CardAddedCelebration } from '@/components/ui/CardAddedCelebration'
 import type { Condition, Language, Variant, CatalogCard, InventoryEntry } from '@/types'
 
 const CONDITIONS: Condition[] = ['M', 'NM', 'EX', 'GD', 'LP', 'PL', 'P']
@@ -58,7 +58,7 @@ export function AddCardPage() {
   const [qty, setQty] = useState(1)
   const [pricePaid, setPricePaid] = useState('')
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState(false)
+  const [celebrationCard, setCelebrationCard] = useState<CatalogCard | null>(null)
 
   // Pre-select card if coming from scan or card detail
   useEffect(() => {
@@ -101,7 +101,7 @@ export function AddCardPage() {
       if (fromScan) {
         navigate(-1)
       } else {
-        setToast(true)
+        setCelebrationCard(selected)
         setSelected(null)
         setQuery('')
         setQty(1)
@@ -411,10 +411,10 @@ export function AddCardPage() {
         </div>
       )}
 
-      {toast && (
-        <Toast
-          message="Carte ajoutée à la collection !"
-          onDismiss={() => setToast(false)}
+      {celebrationCard && (
+        <CardAddedCelebration
+          card={celebrationCard}
+          onDismiss={() => setCelebrationCard(null)}
         />
       )}
     </div>
