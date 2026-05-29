@@ -8,6 +8,7 @@ import { db } from '@/db'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
+import { MultiCardCelebration } from '@/components/ui/MultiCardCelebration'
 import type { CatalogCard } from '@/types'
 
 type ScanMode = 'idle' | 'scanning' | 'recognizing' | 'result' | 'page-result' | 'error'
@@ -74,6 +75,7 @@ export function ScanPage() {
   // detections where a retry returned no new proposals
   const [retryNoResult, setRetryNoResult] = useState<Set<number>>(new Set())
   const [addedCount, setAddedCount] = useState(0)
+  const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
@@ -400,6 +402,7 @@ export function ScanPage() {
     setCandidateSheet(null)
     setAddedCount(prev => prev + toAdd.length)
     saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview })
+    setCelebrationCards(toAdd)
   }, [pageResult, pageSelected, scanType, preview])
 
   const aiLoading = aiKey === undefined
@@ -409,6 +412,9 @@ export function ScanPage() {
   return (
     <div className="pb-24">
       {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
+      {celebrationCards && (
+        <MultiCardCelebration cards={celebrationCards} onDismiss={() => setCelebrationCards(null)} />
+      )}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
 
       {/* Candidate alternatives sheet */}
