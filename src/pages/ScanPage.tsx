@@ -55,6 +55,7 @@ export function ScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const guideFrameRef = useRef<HTMLDivElement>(null)
 
   const saved = loadScan()
   const [mode, setMode] = useState<ScanMode>(saved?.mode ?? 'idle')
@@ -160,10 +161,58 @@ export function ScanPage() {
   const capture = useCallback(async () => {
     const video = videoRef.current
     if (!video || !catalog) return
-    const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d')!.drawImage(video, 0, 0)
+
+    // Crop to the guide frame region so the AI only sees what the user framed.
+    // The video uses object-cover, so we must account for how the raw sensor
+    // frame is scaled/clipped to fit the portrait display area.
+    const canvas = (() => {
+      const frameEl = guideFrameRef.current
+      const vRect = video.getBoundingClientRect()
+
+      if (!frameEl || vRect.width === 0) {
+        // Fallback: full raw frame
+        const c = document.createElement('canvas')
+        c.width = video.videoWidth; c.height = video.videoHeight
+        c.getContext('2d')!.drawImage(video, 0, 0)
+        return c
+      }
+
+      const fRect = frameEl.getBoundingClientRect()
+      const displayW = vRect.width
+      const displayH = vRect.height
+      const videoW  = video.videoWidth
+      const videoH  = video.videoHeight
+
+      // Scale factor: video pixels per display pixel (object-cover, centered)
+      const videoRatio   = videoW / videoH
+      const displayRatio = displayW / displayH
+      let scale: number, offX: number, offY: number
+      if (videoRatio > displayRatio) {
+        // Wider video — fit height, crop left/right
+        scale = videoH / displayH
+        offX  = (videoW - displayW * scale) / 2
+        offY  = 0
+      } else {
+        // Taller video — fit width, crop top/bottom
+        scale = videoW / displayW
+        offX  = 0
+        offY  = (videoH - displayH * scale) / 2
+      }
+
+      // Guide frame position in video pixel space
+      const relX = fRect.left - vRect.left
+      const relY = fRect.top  - vRect.top
+      const srcX = Math.round(offX + relX * scale)
+      const srcY = Math.round(offY + relY * scale)
+      const srcW = Math.round(fRect.width  * scale)
+      const srcH = Math.round(fRect.height * scale)
+
+      const c = document.createElement('canvas')
+      c.width = srcW; c.height = srcH
+      c.getContext('2d')!.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH)
+      return c
+    })()
+
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
     setPreview(dataUrl)
     stopCamera()
@@ -359,8 +408,8 @@ export function ScanPage() {
         <video ref={videoRef} playsInline muted className="w-full aspect-[3/4] object-cover bg-black" />
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {scanType === 'card'
-            ? <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
-            : <div className="absolute inset-4 border-2 border-brand-400 rounded-xl opacity-60" />
+            ? <div ref={guideFrameRef} className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
+            : <div ref={guideFrameRef} className="absolute inset-4 border-2 border-brand-400 rounded-xl opacity-60" />
           }
         </div>
         <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2">
