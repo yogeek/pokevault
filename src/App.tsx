@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/ui/BottomNav'
+import { useSwUpdate } from '@/hooks/useSwUpdate'
 import { CollectionPage } from '@/pages/CollectionPage'
 import { AddCardPage } from '@/pages/AddCardPage'
 import { CardDetailPage } from '@/pages/CardDetailPage'
@@ -16,6 +17,24 @@ import { useCatalogStore } from '@/stores/catalog'
 import { initDB } from '@/db'
 
 const FULLSCREEN_ROUTES = ['/view']
+
+function UpdateBanner() {
+  const { needsRefresh, refresh } = useSwUpdate()
+  if (!needsRefresh) return null
+  return (
+    <div className="fixed top-0 inset-x-0 z-[60] flex items-center justify-between gap-3
+                    bg-brand-500 text-white px-4 py-2.5 shadow-lg max-w-lg mx-auto">
+      <p className="text-sm font-medium">Nouvelle version disponible</p>
+      <button
+        onClick={refresh}
+        className="text-sm font-semibold bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1
+                   transition-colors flex-shrink-0"
+      >
+        Recharger
+      </button>
+    </div>
+  )
+}
 
 export default function App() {
   const { load, loading, progress, error, catalog } = useCatalogStore()
@@ -38,6 +57,7 @@ export default function App() {
 
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
+      <UpdateBanner />
       {import.meta.env.DEV && catalog && (
         <div className="fixed top-1 right-1 z-50 text-[9px] text-slate-700 px-1 select-none">
           {catalog.cards.length} cartes · {catalog.sets.length} sets
