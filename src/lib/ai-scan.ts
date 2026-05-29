@@ -24,6 +24,81 @@ export const AI_MODELS = [
 export type AiModelId = typeof AI_MODELS[number]['id']
 export const DEFAULT_AI_MODEL: AiModelId = 'claude-haiku-4-5-20251001'
 
+export interface ScoredCard {
+  card: CatalogCard
+  score: number  // 0-100 confidence
+}
+
+// Heuristic confidence based on which criteria matched the AI output
+function computeScore(
+  card: CatalogCard,
+  name: string,
+  numInt: number,
+  totalInt: number,
+): number {
+  const lc = name.toLowerCase()
+  const exactName = name !== '' && (
+    card.name.toLowerCase() === lc ||
+    (card.nameFr ?? '').toLowerCase() === lc
+  )
+  const partialName = !exactName && name !== '' && (
+    card.name.toLowerCase().includes(lc) ||
+    (card.nameFr ?? '').toLowerCase().includes(lc)
+  )
+  const numHit   = !isNaN(numInt)   && parseInt(card.number, 10) === numInt
+  const totalHit = !isNaN(totalInt) && card.total === totalInt
+
+  if (exactName   && numHit && totalHit) return 95
+  if (exactName   && numHit)             return 80
+  if (partialName && numHit && totalHit) return 70
+  if (partialName && numHit)             return 60
+  if (exactName   && totalHit)           return 55
+  if (exactName)                         return 50
+  if (numHit      && totalHit)           return 45
+  if (numHit)                            return 35
+  return 20
+}
+
+// Returns up to `limit` candidates sorted by descending confidence score
+function matchCandidates(
+  catalog: CatalogData,
+  name: string,
+  rawNumber: string,
+  limit = 5,
+): ScoredCard[] {
+  const [rawNum, rawTotal] = rawNumber.replace(/\s/g, '').split('/')
+  const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
+  const totalInt = rawTotal ? parseInt(rawTotal, 10) : NaN
+
+  let pool = name ? searchCards(catalog, name, catalog.cards.length) : []
+
+  if (!isNaN(numInt) && pool.length > 0) {
+    const narrowed = pool.filter(c => parseInt(c.number, 10) === numInt)
+    if (narrowed.length > 0) pool = narrowed
+  } else if (!isNaN(numInt) && pool.length === 0) {
+    // Name matched nothing — fall back to number-only search
+    pool = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
+  }
+
+  return pool
+    .map(card => ({ card, score: computeScore(card, name, numInt, totalInt) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+}
+
+export function matchCardFromScan(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
+  return matchCandidates(catalog, name, rawNumber, 1)[0]?.card ?? null
+}
+
+export function matchCandidatesFromScan(
+  catalog: CatalogData,
+  name: string,
+  rawNumber: string,
+  limit = 5,
+): ScoredCard[] {
+  return matchCandidates(catalog, name, rawNumber, limit)
+}
+
 export async function recognizeCardWithClaude(
   canvas: HTMLCanvasElement,
   apiKey: string,
@@ -78,72 +153,23 @@ export async function recognizeCardWithClaude(
   const data = await res.json() as { content: { text: string }[] }
   const text = data.content[0]?.text ?? ''
 
-  // Match outermost JSON object — handles any text Claude wraps around it
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error(`Réponse illisible : ${text.slice(0, 80)}`)
 
   const parsed = JSON.parse(jsonMatch[0]) as { name?: string; number?: string }
-  const name = parsed.name?.trim() ?? ''
+  const name      = parsed.name?.trim() ?? ''
   const rawNumber = parsed.number?.replace(/\s/g, '') ?? ''
-  const [rawNum, rawTotal] = rawNumber.split('/')
-  // Normalise to integers — handles "014" vs "14"
-  const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
-  const totalInt = rawTotal ? parseInt(rawTotal, 10) : NaN
 
-  // Fetch ALL name matches so number narrowing works across all sets
-  let results = name ? searchCards(catalog, name, catalog.cards.length) : []
-
-  // Narrow by number (numeric comparison handles zero-padding)
-  if (!isNaN(numInt) && results.length > 0) {
-    const narrowed = results.filter(c => parseInt(c.number, 10) === numInt)
-    if (narrowed.length > 0) results = narrowed
-  } else if (!isNaN(numInt) && results.length === 0) {
-    results = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
-  }
-
-  // Sort: cards whose set total matches the printed total come first (e.g. 014/094 → total=94)
-  if (!isNaN(totalInt) && results.length > 1) {
-    results.sort((a, b) => {
-      const aMatch = a.total === totalInt ? 0 : 1
-      const bMatch = b.total === totalInt ? 0 : 1
-      return aMatch - bMatch
-    })
-  }
-
-  return results.slice(0, 5)
+  return matchCandidates(catalog, name, rawNumber, 5).map(sc => sc.card)
 }
 
-export function matchCardFromScan(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
-  return matchOne(catalog, name, rawNumber)
-}
-
-function matchOne(catalog: CatalogData, name: string, rawNumber: string): CatalogCard | null {
-  const [rawNum, rawTotal] = rawNumber.replace(/\s/g, '').split('/')
-  const numInt   = rawNum   ? parseInt(rawNum,   10) : NaN
-  const totalInt = rawTotal ? parseInt(rawTotal, 10) : NaN
-
-  let results = name ? searchCards(catalog, name, catalog.cards.length) : []
-
-  if (!isNaN(numInt) && results.length > 0) {
-    const narrowed = results.filter(c => parseInt(c.number, 10) === numInt)
-    if (narrowed.length > 0) results = narrowed
-  } else if (!isNaN(numInt) && results.length === 0) {
-    results = catalog.cards.filter(c => parseInt(c.number, 10) === numInt)
-  }
-
-  if (!isNaN(totalInt) && results.length > 1) {
-    results.sort((a, b) => (a.total === totalInt ? 0 : 1) - (b.total === totalInt ? 0 : 1))
-  }
-
-  return results[0] ?? null
-}
-
+// Returns one ScoredCard[] per detected card (candidates sorted by confidence, best first).
 export async function recognizePageWithClaude(
   canvas: HTMLCanvasElement,
   apiKey: string,
   catalog: CatalogData,
   model: AiModelId = DEFAULT_AI_MODEL,
-): Promise<CatalogCard[]> {
+): Promise<ScoredCard[][]> {
   const imageData = toJpegBase64(canvas, MAX_DIM_PAGE)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60_000)
@@ -198,14 +224,21 @@ export async function recognizePageWithClaude(
   const parsed = JSON.parse(jsonMatch[0]) as { cards?: { name?: string; number?: string }[] }
   const items = parsed.cards ?? []
 
-  const results: CatalogCard[] = []
+  const detections: ScoredCard[][] = []
+  const seenBestIds = new Set<string>()
+
   for (const item of items) {
     const name   = item.name?.trim()   ?? ''
     const number = item.number?.trim() ?? ''
     if (!name && !number) continue
-    const match = matchOne(catalog, name, number)
-    if (match && !results.find(r => r.id === match.id)) results.push(match)
+    const candidates = matchCandidates(catalog, name, number, 5)
+    if (candidates.length === 0) continue
+    const bestId = candidates[0].card.id
+    if (!seenBestIds.has(bestId)) {
+      seenBestIds.add(bestId)
+      detections.push(candidates)
+    }
   }
 
-  return results
+  return detections
 }

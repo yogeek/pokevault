@@ -5,7 +5,7 @@ import { cardName, cardSetName } from '@/lib/catalog'
 import { recognizeCardWithClaude, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import { db } from '@/db'
-import type { AiModelId } from '@/lib/ai-scan'
+import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import type { CatalogCard } from '@/types'
@@ -19,13 +19,20 @@ interface PersistedScan {
   mode: 'result' | 'page-result'
   scanType: ScanType
   result: CatalogCard[]
-  pageResult: CatalogCard[]
+  pageResult: ScoredCard[][]
   preview: string | null
 }
 
 function loadScan(): PersistedScan | null {
-  try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? 'null') }
-  catch { return null }
+  try {
+    const data = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? 'null') as PersistedScan | null
+    if (!data) return null
+    // Backward compat: old format had pageResult as CatalogCard[] (flat array of objects)
+    if (data.pageResult?.length > 0 && !Array.isArray(data.pageResult[0])) {
+      return { ...data, pageResult: [] }
+    }
+    return data
+  } catch { return null }
 }
 
 function saveScan(s: PersistedScan) {
@@ -33,6 +40,12 @@ function saveScan(s: PersistedScan) {
 }
 
 function clearScan() { sessionStorage.removeItem(STORAGE_KEY) }
+
+function scoreColor(score: number) {
+  if (score >= 80) return { badge: 'bg-green-500/20 text-green-400', dot: 'bg-green-400' }
+  if (score >= 60) return { badge: 'bg-amber-500/20 text-amber-400', dot: 'bg-amber-400' }
+  return { badge: 'bg-red-500/20 text-red-400', dot: 'bg-red-400' }
+}
 
 export function ScanPage() {
   const navigate = useNavigate()
@@ -47,10 +60,12 @@ export function ScanPage() {
   const [mode, setMode] = useState<ScanMode>(saved?.mode ?? 'idle')
   const [scanType, setScanType] = useState<ScanType>(saved?.scanType ?? 'card')
   const [result, setResult] = useState<CatalogCard[]>(saved?.result ?? [])
-  const [pageResult, setPageResult] = useState<CatalogCard[]>(saved?.pageResult ?? [])
+  // pageResult: one ScoredCard[] per detected card (candidates sorted by confidence)
+  const [pageResult, setPageResult] = useState<ScoredCard[][]>(saved?.pageResult ?? [])
   const [pageSelected, setPageSelected] = useState<Set<string>>(
-    new Set(saved?.pageResult?.map(c => c.id) ?? [])
+    new Set(saved?.pageResult?.map(d => d[0]?.card.id).filter(Boolean) ?? [])
   )
+  const [candidateSheet, setCandidateSheet] = useState<number | null>(null)
   const [addedCount, setAddedCount] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -110,12 +125,12 @@ export function ScanPage() {
     if (!key) return
     setMode('recognizing')
     try {
-      const cards = await recognizePageWithClaude(canvas, key, catalog, aiModel)
-      setPageResult(cards)
-      setPageSelected(new Set(cards.map(c => c.id)))
+      const detections = await recognizePageWithClaude(canvas, key, catalog, aiModel)
+      setPageResult(detections)
+      setPageSelected(new Set(detections.map(d => d[0]?.card.id).filter(Boolean)))
       setAddedCount(0)
       setMode('page-result')
-      saveScan({ mode: 'page-result', scanType, result: [], pageResult: cards, preview: currentPreview })
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: detections, preview: currentPreview })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -189,6 +204,7 @@ export function ScanPage() {
     setResult([])
     setPageResult([])
     setPageSelected(new Set())
+    setCandidateSheet(null)
     setError('')
     setPreview(null)
     setLightbox(null)
@@ -218,13 +234,38 @@ export function ScanPage() {
   }, [])
 
   const toggleAll = useCallback(() => {
+    const allIds = pageResult.map(d => d[0]?.card.id).filter(Boolean)
     setPageSelected(prev =>
-      prev.size === pageResult.length ? new Set() : new Set(pageResult.map(c => c.id))
+      prev.size === pageResult.length ? new Set() : new Set(allIds)
     )
   }, [pageResult])
 
+  // Pick a different candidate for a detection (reorders candidates so chosen is first)
+  const pickCandidate = useCallback((detectionIdx: number, scoredCard: ScoredCard) => {
+    setPageResult(prev => {
+      const updated = prev.map((d, i) => {
+        if (i !== detectionIdx) return d
+        return [scoredCard, ...d.filter(sc => sc.card.id !== scoredCard.card.id)]
+      })
+      return updated
+    })
+    // Swap selection: if old best was selected, select the new choice instead
+    const oldBestId = pageResult[detectionIdx][0]?.card.id
+    if (oldBestId && pageSelected.has(oldBestId)) {
+      setPageSelected(prev => {
+        const next = new Set(prev)
+        next.delete(oldBestId)
+        next.add(scoredCard.card.id)
+        return next
+      })
+    }
+    setCandidateSheet(null)
+  }, [pageResult, pageSelected])
+
   const addSelectedToCollection = useCallback(async () => {
-    const toAdd = pageResult.filter(c => pageSelected.has(c.id))
+    const toAdd = pageResult
+      .map(d => d[0]?.card)
+      .filter((c): c is CatalogCard => !!c && pageSelected.has(c.id))
     await Promise.all(toAdd.map(card =>
       db.inventory.add({
         cardId: card.id,
@@ -248,6 +289,66 @@ export function ScanPage() {
       {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
 
+      {/* Candidate alternatives sheet */}
+      {candidateSheet !== null && pageResult[candidateSheet] && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setCandidateSheet(null)} />
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-slate-900 rounded-t-3xl border-t border-slate-800
+                          pb-[env(safe-area-inset-bottom)] max-w-lg mx-auto">
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            </div>
+            <div className="px-4 pt-1 pb-6">
+              <h3 className="text-sm font-semibold text-slate-300 mb-1">Propositions alternatives</h3>
+              <p className="text-xs text-slate-500 mb-3">
+                Appuyez sur la bonne carte pour la sélectionner
+              </p>
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                {pageResult[candidateSheet].map((sc, i) => {
+                  const { badge } = scoreColor(sc.score)
+                  const isCurrent = i === 0
+                  return (
+                    <button
+                      key={sc.card.id}
+                      onClick={() => pickCandidate(candidateSheet, sc)}
+                      className={`w-full flex items-center gap-3 rounded-xl p-3 text-left transition-colors
+                        ${isCurrent
+                          ? 'bg-brand-500/15 border border-brand-500/40'
+                          : 'bg-slate-800 border border-transparent hover:border-slate-600'}`}
+                    >
+                      <img
+                        src={sc.card.imageUrl}
+                        alt={cardName(sc.card)}
+                        className="w-10 h-14 object-cover rounded flex-shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{cardName(sc.card)}</p>
+                        <p className="text-xs text-slate-400">
+                          {cardSetName(sc.card)} · #{sc.card.number}/{sc.card.total}
+                        </p>
+                        {isCurrent && (
+                          <p className="text-[11px] text-brand-400 mt-0.5">Sélection actuelle</p>
+                        )}
+                      </div>
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${badge}`}>
+                        {sc.score}%
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                onClick={() => setCandidateSheet(null)}
+                className="w-full mt-3 py-2.5 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-3">
         <h1 className="text-xl font-bold">Scanner</h1>
         <p className="text-xs text-slate-500">Reconnaissance automatique par IA</p>
@@ -256,7 +357,6 @@ export function ScanPage() {
       {/* Video — always mounted */}
       <div className={mode === 'scanning' ? 'relative' : 'hidden'}>
         <video ref={videoRef} playsInline muted className="w-full aspect-[3/4] object-cover bg-black" />
-        {/* Guide overlay — card frame for single, full frame for page */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {scanType === 'card'
             ? <div className="w-64 h-[358px] border-2 border-brand-400 rounded-xl opacity-60" />
@@ -293,7 +393,6 @@ export function ScanPage() {
             <div className="flex items-center gap-2 text-slate-400 text-sm"><Spinner /> Chargement du catalogue…</div>
           ) : (
             <>
-              {/* Scan type toggle */}
               <div className="w-full flex rounded-xl overflow-hidden border border-slate-700">
                 {(['card', 'page'] as ScanType[]).map(t => (
                   <button key={t} onClick={() => setScanType(t)}
@@ -401,13 +500,12 @@ export function ScanPage() {
 
       {mode === 'page-result' && (
         <div className="px-4 py-4 space-y-4">
-          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-semibold">
                 {pageResult.length} carte{pageResult.length > 1 ? 's' : ''} identifiée{pageResult.length > 1 ? 's' : ''}
               </h2>
-              <p className="text-xs text-slate-500">{pageSelected.size} sélectionnée{pageSelected.size > 1 ? 's' : ''}</p>
+              <p className="text-xs text-slate-500">{pageSelected.size} sélectionnée{pageSelected.size > 1 ? 's' : ''} · Appuyez pour voir les alternatives</p>
             </div>
             <button onClick={toggleAll} className="text-xs text-brand-400 hover:underline">
               {pageSelected.size === pageResult.length ? 'Tout désélectionner' : 'Tout sélectionner'}
@@ -421,44 +519,76 @@ export function ScanPage() {
             </div>
           )}
 
-          {/* Card list */}
           <div className="space-y-2">
-            {pageResult.map(card => (
-              <button key={card.id} onClick={() => toggleCard(card.id)}
-                className={`w-full flex items-center gap-3 rounded-xl p-3 text-left border transition-colors
-                  ${pageSelected.has(card.id)
-                    ? 'bg-brand-500/10 border-brand-500/40'
-                    : 'bg-slate-800 border-transparent opacity-50'}`}>
-                <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center
-                  ${pageSelected.has(card.id) ? 'bg-brand-500 border-brand-500' : 'border-slate-600'}`}>
-                  {pageSelected.has(card.id) && (
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
+            {pageResult.map((candidates, detectionIdx) => {
+              const best = candidates[0]
+              if (!best) return null
+              const card = best.card
+              const cardId = card.id
+              const isSelected = pageSelected.has(cardId)
+              const hasAlts = candidates.length > 1
+              const { badge, dot } = scoreColor(best.score)
+
+              return (
+                <div
+                  key={`${detectionIdx}-${cardId}`}
+                  className={`flex items-center gap-2 rounded-xl border transition-colors
+                    ${isSelected ? 'bg-brand-500/10 border-brand-500/40' : 'bg-slate-800 border-transparent opacity-60'}`}
+                >
+                  {/* Checkbox — toggles selection */}
+                  <button
+                    onClick={() => toggleCard(cardId)}
+                    className="flex-shrink-0 w-10 h-full flex items-center justify-center pl-3"
+                    aria-label={isSelected ? 'Désélectionner' : 'Sélectionner'}
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center
+                      ${isSelected ? 'bg-brand-500 border-brand-500' : 'border-slate-600'}`}>
+                      {isSelected && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Card info + open alternatives sheet */}
+                  <button
+                    onClick={() => setCandidateSheet(detectionIdx)}
+                    className="flex items-center gap-3 flex-1 p-3 pl-1 text-left min-w-0"
+                  >
+                    <img
+                      src={card.imageUrl} alt={cardName(card)}
+                      className="w-10 h-14 object-cover rounded flex-shrink-0"
+                      onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                      onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate text-sm">{cardName(card)}</p>
+                      <p className="text-xs text-slate-400 truncate">{cardSetName(card)} · #{card.number}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+                        <span className={`text-[11px] font-semibold ${badge.split(' ')[1]}`}>{best.score}% de confiance</span>
+                        {hasAlts && <span className="text-[11px] text-slate-500">· {candidates.length - 1} autre{candidates.length > 2 ? 's' : ''}</span>}
+                      </div>
+                    </div>
+                    {/* Chevron only if there are alternatives */}
+                    {hasAlts && (
+                      <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
-                <img
-                  src={card.imageUrl} alt={cardName(card)}
-                  className="w-10 rounded object-cover flex-shrink-0 active:opacity-70"
-                  onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
-                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate text-sm">{cardName(card)}</p>
-                  <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}</p>
-                </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
 
-          {/* Success message */}
           {addedCount > 0 && (
             <p className="text-green-400 text-sm text-center">
               ✅ {addedCount} carte{addedCount > 1 ? 's' : ''} ajoutée{addedCount > 1 ? 's' : ''} à la collection !
             </p>
           )}
 
-          {/* Actions */}
           <div className="space-y-2 pt-1">
             {pageSelected.size > 0 && (
               <button onClick={addSelectedToCollection}
