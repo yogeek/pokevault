@@ -121,6 +121,7 @@ export function ScanPage() {
   const [retryNoResult, setRetryNoResult] = useState<Set<number>>(new Set())
   const [addedCount, setAddedCount] = useState(0)
   const [adding, setAdding] = useState(false)
+  const [fromHistory, setFromHistory] = useState(false)
   const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -411,6 +412,7 @@ export function ScanPage() {
     setError('')
     setPreview(null)
     setLightbox(null)
+    setFromHistory(false)
     setMode('idle')
   }, [])
 
@@ -440,15 +442,10 @@ export function ScanPage() {
     setError('')
     setCandidateSheet(null)
     setLightbox(null)
+    setFromHistory(true)
     setMode(entry.scanType === 'page' ? 'page-result' : 'result')
-    saveScan({
-      mode: entry.scanType === 'page' ? 'page-result' : 'result',
-      scanType: entry.scanType,
-      result: entry.result,
-      pageResult: entry.pageResult,
-      preview: null,
-      pageSelected: entry.pageSelected,
-    })
+    // Intentionally NOT calling saveScan: history is already the persistence.
+    // This way navigating away and back returns to idle (history list), not the restored scan.
   }, [])
 
   const toggleCard = useCallback((id: string) => {
@@ -830,6 +827,15 @@ export function ScanPage() {
 
       {mode === 'result' && (
         <div className="px-4 py-4 space-y-3">
+          {fromHistory && (
+            <button onClick={reset}
+              className="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors -mb-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              Scans récents
+            </button>
+          )}
           {preview && (
             <img src={preview} alt="carte scannée" className="w-full max-h-48 object-contain rounded-xl bg-slate-900" />
           )}
@@ -875,6 +881,15 @@ export function ScanPage() {
 
       {mode === 'page-result' && (
         <div className="px-4 py-4 space-y-4">
+          {fromHistory && (
+            <button onClick={reset}
+              className="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              Scans récents
+            </button>
+          )}
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-semibold">
