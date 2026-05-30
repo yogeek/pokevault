@@ -16,7 +16,7 @@ import { CheckCardPage } from '@/pages/CheckCardPage'
 import { useCatalogStore } from '@/stores/catalog'
 import { initDB } from '@/db'
 
-const FULLSCREEN_ROUTES = ['/view']
+const FULLSCREEN_ROUTES: string[] = []
 
 function UpdateBanner() {
   const { needsRefresh, refresh } = useSwUpdate()
