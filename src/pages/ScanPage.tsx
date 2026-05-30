@@ -95,7 +95,8 @@ function scoreColor(score: number) {
 export function ScanPage() {
   const navigate = useNavigate()
   const { state: locationState } = useLocation()
-  const returnTo = (locationState as { returnTo?: string } | null)?.returnTo ?? '/add'
+  const returnTo = (locationState as { returnTo?: string; imageDataUrl?: string } | null)?.returnTo ?? '/add'
+  const incomingImage = (locationState as { imageDataUrl?: string } | null)?.imageDataUrl ?? null
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -169,6 +170,26 @@ export function ScanPage() {
     if (retryCtx && mode !== 'scanning') startCamera()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryCtx])
+
+  // Auto-process an image passed via navigation state (e.g. from AddCardPage gallery picker)
+  const incomingHandled = useRef(false)
+  useEffect(() => {
+    if (!incomingImage || !catalog || incomingHandled.current) return
+    incomingHandled.current = true
+    setPreview(incomingImage)
+    clearScan()
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      canvas.getContext('2d')!.drawImage(img, 0, 0)
+      if (scanType === 'page') runPageRecognition(canvas, incomingImage)
+      else runRecognition(canvas, incomingImage)
+    }
+    img.src = incomingImage
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingImage, catalog])
 
   // Back-button sentinel: when a lightbox or candidate sheet is open, push a dummy
   // history entry (same URL, no navigation) so that the Android/browser back button

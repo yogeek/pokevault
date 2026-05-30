@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { searchCards, cardName, cardSetName } from '@/lib/catalog'
@@ -50,6 +50,7 @@ export function AddCardPage() {
   const fromScan = !!(state as { fromScan?: boolean } | null)?.fromScan
   const catalog = useCatalogStore(s => s.catalog)
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<CatalogCard | null>(null)
   const [existingEntries, setExistingEntries] = useState<InventoryEntry[]>([])
@@ -145,24 +146,50 @@ export function AddCardPage() {
       {/* Search */}
       {!selected && (
         <div className="space-y-3">
-          {/* Scanner shortcut */}
-          <button
-            onClick={() => navigate('/scan')}
-            className="w-full flex items-center gap-3 bg-brand-500/10 border border-brand-500/30
-                       rounded-2xl px-4 py-3 text-left"
-          >
-            <svg className="w-6 h-6 text-brand-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
-            </svg>
-            <div>
-              <p className="text-sm font-semibold text-brand-300">Scanner une carte</p>
-              <p className="text-xs text-brand-400/60">Reconnaissance automatique par IA</p>
-            </div>
-            <svg className="w-4 h-4 text-brand-500 ml-auto flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+          {/* Scanner / galerie shortcuts */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              e.target.value = ''
+              const reader = new FileReader()
+              reader.onload = ev => {
+                const dataUrl = ev.target?.result as string
+                if (dataUrl) navigate('/scan', { state: { imageDataUrl: dataUrl } })
+              }
+              reader.readAsDataURL(file)
+            }}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate('/scan')}
+              className="flex-1 flex flex-col items-center gap-1.5 bg-brand-500/10 border border-brand-500/30
+                         rounded-2xl px-3 py-3"
+            >
+              <svg className="w-6 h-6 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
+              </svg>
+              <p className="text-sm font-semibold text-brand-300">Scanner</p>
+              <p className="text-xs text-brand-400/60 text-center leading-tight">Caméra + IA</p>
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1 flex flex-col items-center gap-1.5 bg-slate-800 border border-slate-700
+                         rounded-2xl px-3 py-3 hover:border-brand-500/40 transition-colors"
+            >
+              <svg className="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <p className="text-sm font-semibold text-slate-200">Galerie</p>
+              <p className="text-xs text-slate-500 text-center leading-tight">Photo existante</p>
+            </button>
+          </div>
 
           <div className="flex items-center gap-3 text-xs text-slate-600">
             <div className="flex-1 h-px bg-slate-800" />
