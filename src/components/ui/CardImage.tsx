@@ -23,7 +23,7 @@ export function CardImage({ src, alt, className }: Props) {
           src={src}
           alt={alt}
           className={`${className ?? ''} cursor-zoom-in`}
-          onClick={e => { e.stopPropagation(); setOpen(true) }}
+          onClick={e => { e.stopPropagation(); e.preventDefault(); setOpen(true) }}
           onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
         />
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center
