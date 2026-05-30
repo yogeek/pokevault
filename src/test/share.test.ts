@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encodeSnapshot, decodeSnapshot, checkCard, buildSnapshot } from '@/lib/share'
+import { encodeSnapshot, decodeSnapshot, checkCard, buildSnapshot, encryptApiKey, decryptApiKey, getShareUrlWithKey } from '@/lib/share'
 import type { ShareSnapshot, InventoryEntry } from '@/types'
 
 const snapshot: ShareSnapshot = {
@@ -37,6 +37,44 @@ describe('share encode/decode round-trip', () => {
     const encoded = encodeSnapshot(snap)
     // Should be well under 10 000 chars for 500 cards
     expect(encoded.length).toBeLessThan(10_000)
+  })
+})
+
+describe('encryptApiKey / decryptApiKey round-trip', () => {
+  it('decrypts back to original key', async () => {
+    const original = 'sk-ant-api03-test-key-abc123'
+    const { encrypted, decKey } = await encryptApiKey(original)
+    const recovered = await decryptApiKey(encrypted, decKey)
+    expect(recovered).toBe(original)
+  })
+
+  it('encrypted value is a non-empty base64url string (no +/=/)', async () => {
+    const { encrypted, decKey } = await encryptApiKey('test-key')
+    expect(encrypted).not.toContain('+')
+    expect(encrypted).not.toContain('/')
+    expect(encrypted).not.toContain('=')
+    expect(decKey).not.toContain('+')
+    expect(decKey).not.toContain('/')
+    expect(decKey).not.toContain('=')
+  })
+
+  it('URL with key can be split and decoded', async () => {
+    const snap: ShareSnapshot = { v: 1, n: 'Alice', g: '2026-05-14T12:00:00Z', i: [], w: [] }
+    const fakeKey = 'sk-ant-api03-real-key-xyz'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).window = { location: { origin: 'https://example.com' } }
+    const url = await getShareUrlWithKey(snap, fakeKey)
+    const fragment = url.split('#')[1]
+    const tildeIdx = fragment.lastIndexOf('~')
+    const encodedSnap = fragment.slice(0, tildeIdx)
+    const decKey = fragment.slice(tildeIdx + 1)
+
+    const decoded = decodeSnapshot(encodedSnap)
+    expect(decoded.n).toBe('Alice')
+    expect(decoded.ak).toBeTruthy()
+
+    const recovered = await decryptApiKey(decoded.ak!, decKey)
+    expect(recovered).toBe(fakeKey)
   })
 })
 

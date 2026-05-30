@@ -12,6 +12,7 @@ import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
 import { CardImage } from '@/components/ui/CardImage'
 
+// Session storage key used as a cross-page-load backup for the guest API key
 const SESSION_KEY = 'pokevault_session_api_key'
 
 export function SharedViewPage() {
@@ -19,11 +20,20 @@ export function SharedViewPage() {
   const navigate = useNavigate()
   const { activeSnapshot, decodeError, loadFromFragment, clear } = useShareStore()
 
-  // Split fragment into snapshot part and optional decryption key (after '~')
-  const raw = location.hash.slice(1)
+  // The URL fragment may contain `~<decKey>` after the encoded snapshot
+  const raw = (() => {
+    try { return decodeURIComponent(location.hash.slice(1)) }
+    catch { return location.hash.slice(1) }
+  })()
   const tildeIdx = raw.lastIndexOf('~')
   const fragment = tildeIdx !== -1 ? raw.slice(0, tildeIdx) : raw
   const decKey   = tildeIdx !== -1 ? raw.slice(tildeIdx + 1) : null
+
+  const [guestApiKey, setGuestApiKey]   = useState<string | null>(
+    // Restore from session storage on page refresh
+    () => sessionStorage.getItem(SESSION_KEY),
+  )
+  const [keyDecryptError, setKeyDecryptError] = useState<string | null>(null)
 
   // Decode from URL fragment on mount; auto-save to "Amis"
   useEffect(() => {
@@ -31,12 +41,19 @@ export function SharedViewPage() {
     return () => clear()
   }, [fragment, loadFromFragment, clear])
 
-  // Decrypt and store API key in sessionStorage (cleared on tab close)
+  // Decrypt the guest API key as soon as the snapshot (with ak) and decKey are available
   useEffect(() => {
     if (!activeSnapshot?.ak || !decKey) return
+    setKeyDecryptError(null)
     decryptApiKey(activeSnapshot.ak, decKey)
-      .then(key => sessionStorage.setItem(SESSION_KEY, key))
-      .catch(() => {})
+      .then(key => {
+        setGuestApiKey(key)
+        sessionStorage.setItem(SESSION_KEY, key)
+      })
+      .catch(err => {
+        console.error('[share] key decryption failed:', err)
+        setKeyDecryptError('Impossible de déchiffrer la clé IA partagée. Le lien est peut-être incomplet.')
+      })
   }, [activeSnapshot, decKey])
 
   // Auto-save the snapshot as soon as it's decoded (fragment visits only)
@@ -69,14 +86,20 @@ export function SharedViewPage() {
       ownerName={snap.n}
       daysOld={daysOld}
       fromUrl={!!location.hash}
+      guestApiKey={guestApiKey}
+      keyDecryptError={keyDecryptError}
     />
   )
 }
 
 function SharedViewContent({
-  ownerName, daysOld, fromUrl,
+  ownerName, daysOld, fromUrl, guestApiKey, keyDecryptError,
 }: {
-  ownerName: string; daysOld: number; fromUrl: boolean
+  ownerName: string
+  daysOld: number
+  fromUrl: boolean
+  guestApiKey: string | null
+  keyDecryptError: string | null
 }) {
   const snap = useShareStore(s => s.activeSnapshot)!
   const catalog = useCatalogStore(s => s.catalog)
@@ -86,25 +109,15 @@ function SharedViewContent({
   const [scanMode, setScanMode] = useState(false)
   const [scanResult, setScanResult] = useState<{ result: CheckResult; card?: CatalogCard } | null>(null)
   const [scanning, setScanning] = useState(false)
-  const [apiKeyMissing, setApiKeyMissing] = useState(false)
-  const [sessionKeyOwner, setSessionKeyOwner] = useState(false)
+  const [localApiKey, setLocalApiKey] = useState<string | null>(null)
   const [tab, setTab] = useState<'scanner' | 'collection' | 'wishlist'>('scanner')
 
-  // Re-check key availability after sessionStorage may have been populated
   useEffect(() => {
-    const check = () => {
-      getSetting('aiApiKeyEnc').then(k => {
-        const hasLocal = !!k
-        const hasSession = !!sessionStorage.getItem(SESSION_KEY)
-        setApiKeyMissing(!hasLocal && !hasSession)
-        setSessionKeyOwner(!hasLocal && hasSession)
-      })
-    }
-    check()
-    // Retry shortly to catch the async decryption completing
-    const t = setTimeout(check, 800)
-    return () => clearTimeout(t)
+    getSetting('aiApiKeyEnc').then(k => setLocalApiKey((k as string) || null))
   }, [])
+
+  const apiKeyMissing = !localApiKey && !guestApiKey
+  const sessionKeyOwner = !localApiKey && !!guestApiKey
 
   const startCamera = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -130,11 +143,8 @@ function SharedViewContent({
     setScanning(true)
     setScanResult(null)
     try {
-      const [localKey, storedModel] = await Promise.all([
-        getSetting('aiApiKeyEnc') as Promise<string | undefined>,
-        getSetting('aiModel') as Promise<AiModelId | undefined>,
-      ])
-      const apiKey = localKey || sessionStorage.getItem(SESSION_KEY) || null
+      const storedModel = await getSetting('aiModel') as AiModelId | undefined
+      const apiKey = localApiKey || guestApiKey
       if (!apiKey) { setScanResult({ result: { type: 'unknown' } }); return }
       const model = storedModel ?? DEFAULT_AI_MODEL
       const cards = await recognizeCardWithClaude(canvas, apiKey, catalog, model)
@@ -148,7 +158,7 @@ function SharedViewContent({
     } finally {
       setScanning(false)
     }
-  }, [catalog, snap])
+  }, [catalog, snap, localApiKey, guestApiKey])
 
   const capture = useCallback(async () => {
     if (!videoRef.current) return
@@ -224,8 +234,15 @@ function SharedViewContent({
         )}
       </div>
 
+      {/* Decryption error (bad/truncated URL) */}
+      {keyDecryptError && (
+        <div className="mx-4 mb-3 bg-red-500/10 border border-red-500/30 rounded-2xl px-4 py-2.5">
+          <p className="text-xs text-red-300">{keyDecryptError}</p>
+        </div>
+      )}
+
       {/* Session key banner — scan offered by owner */}
-      {sessionKeyOwner && (
+      {sessionKeyOwner && !keyDecryptError && (
         <div className="mx-4 mb-3 bg-brand-500/10 border border-brand-500/30 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
           <span className="text-lg">🔑</span>
           <p className="text-xs text-brand-300">
