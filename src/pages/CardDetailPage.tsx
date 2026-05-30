@@ -6,6 +6,7 @@ import { deleteEntry, updateEntry } from '@/db/inventory'
 import { addToWishlist, removeFromWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
+import { CardImage } from '@/components/ui/CardImage'
 import { ConditionBadge, PriorityBadge } from '@/components/ui/Badge'
 import { Toast } from '@/components/ui/Toast'
 import type { Condition, InventoryEntry, WishlistEntry, WishlistPriority } from '@/types'
@@ -85,12 +86,7 @@ export function CardDetailPage() {
         <div className="absolute top-4 left-4">
           <BackButton />
         </div>
-        <img
-          src={card.imageUrl}
-          alt={cardName(card)}
-          className="w-48 shadow-2xl rounded-xl"
-          onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-        />
+        <CardImage src={card.imageUrl} alt={cardName(card)} className="w-48 shadow-2xl rounded-xl" />
         {/* Wishlist heart */}
         <button
           onClick={() => inWishlist ? handleRemoveWishlist() : setShowWishlistPicker(true)}

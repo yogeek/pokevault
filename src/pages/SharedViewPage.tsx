@@ -10,6 +10,7 @@ import { getSetting } from '@/db/settings'
 import type { AiModelId } from '@/lib/ai-scan'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
+import { CardImage } from '@/components/ui/CardImage'
 
 export function SharedViewPage() {
   const location = useLocation()
@@ -233,7 +234,7 @@ function ScanResultCard({
       <div className="flex-1">
         {card && (
           <div className="flex items-center gap-2 mb-2">
-            <img src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
+            <CardImage src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
             <div>
               <p className="text-sm font-semibold">{cardName(card)}</p>
               <p className="text-xs text-slate-400">{card.setNameFr ?? card.setName}</p>

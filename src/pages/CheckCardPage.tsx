@@ -4,6 +4,7 @@ import { useCatalogStore } from '@/stores/catalog'
 import { searchCards, cardName, cardSetName } from '@/lib/catalog'
 import { getInventoryForCard } from '@/db/inventory'
 import { Spinner } from '@/components/ui/Spinner'
+import { CardImage } from '@/components/ui/CardImage'
 import type { CatalogCard, InventoryEntry } from '@/types'
 
 export function CheckCardPage() {
@@ -102,12 +103,7 @@ export function CheckCardPage() {
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-left
                            active:bg-slate-700 transition-colors"
               >
-                <img
-                  src={card.imageUrl}
-                  alt={cardName(card)}
-                  className="w-10 h-14 object-cover rounded"
-                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                />
+                <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{cardName(card)}</p>
                   <p className="text-xs text-slate-400 truncate">
@@ -130,12 +126,7 @@ export function CheckCardPage() {
         <div className="space-y-5">
           {/* Card preview */}
           <div className="flex items-center gap-4 bg-slate-800/50 rounded-2xl p-3">
-            <img
-              src={selected.imageUrl}
-              alt={cardName(selected)}
-              className="w-16 h-[88px] object-cover rounded-lg shadow"
-              onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-            />
+            <CardImage src={selected.imageUrl} alt={cardName(selected)} className="w-16 h-[88px] object-cover rounded-lg shadow" />
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate">{cardName(selected)}</p>
               <p className="text-sm text-slate-400">{cardSetName(selected)}</p>

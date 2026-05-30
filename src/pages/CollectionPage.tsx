@@ -5,6 +5,7 @@ import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
+import { CardImage } from '@/components/ui/CardImage'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { useExportReminder } from '@/hooks/useExportReminder'
@@ -388,12 +389,7 @@ export function CollectionPage() {
                   </div>
                 )}
                 {card ? (
-                  <img
-                    src={card.imageUrl}
-                    alt={cardName(card)}
-                    className="w-10 h-14 object-cover rounded flex-shrink-0"
-                    onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                  />
+                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
                 ) : (
                   <div className="w-10 h-14 bg-slate-700 rounded flex-shrink-0" />
                 )}

@@ -5,6 +5,7 @@ import { removeFromWishlist, addToWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { PriorityBadge } from '@/components/ui/Badge'
+import { CardImage } from '@/components/ui/CardImage'
 import type { WishlistPriority } from '@/types'
 
 const PRIORITY_LABELS: Record<WishlistPriority, string> = {
@@ -49,9 +50,9 @@ export function WishlistPage() {
                 const card = catalog?.cards.find(c => c.id === entry.cardId)
                 return (
                   <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
-                    <Link to={`/card/${entry.cardId}`}>
+                    <Link to={`/card/${entry.cardId}`} className="flex-shrink-0">
                       {card
-                        ? <img src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
+                        ? <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
                         : <div className="w-10 h-14 bg-slate-700 rounded" />
                       }
                     </Link>
