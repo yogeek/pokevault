@@ -40,6 +40,7 @@ export function SettingsPage() {
   const [aiKey, setAiKey] = useState('')
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [aiSaved, setAiSaved] = useState(false)
+  const [modelSaved, setModelSaved] = useState(false)
 
   // Stats
   const [counts, setCounts] = useState({ cards: 0, unique: 0, wishlist: 0 })
@@ -228,6 +229,12 @@ export function SettingsPage() {
   }
 
   // ─── AI settings ─────────────────────────────────────────────────────────
+
+  async function saveModel() {
+    await setSetting('aiModel', aiModel)
+    setModelSaved(true)
+    setTimeout(() => setModelSaved(false), 2000)
+  }
 
   async function saveAIKey() {
     const cleanKey = aiKey.trim()
@@ -482,77 +489,72 @@ export function SettingsPage() {
 
       {/* ── Reconnaissance IA ── */}
       <Section title="Reconnaissance de cartes (IA)">
-        {!showAI ? (
-          <div className="space-y-2">
-            <p className="text-xs text-slate-400">
-              La reconnaissance automatique envoie la photo de la carte à{' '}
-              <strong className="text-slate-200">
-                {AI_MODELS.find(m => m.id === aiModel)?.label ?? 'Claude'}</strong> (Anthropic) qui identifie
-              le Pokémon et le numéro. Aucune donnée de collection n'est transmise.
-            </p>
+        {/* Model selector — independent from API key */}
+        <p className="text-xs text-slate-400">
+          Modèle utilisé pour identifier les cartes (photo → Claude → nom + numéro).
+          Aucune donnée de collection n'est transmise.
+        </p>
+        <div className="space-y-1.5">
+          {AI_MODELS.map(m => (
+            <button
+              key={m.id}
+              onClick={() => setAiModel(m.id)}
+              className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition-colors
+                ${aiModel === m.id
+                  ? 'border-brand-500 bg-brand-500/10 text-brand-300'
+                  : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}
+            >
+              <span className="font-medium">{m.label}</span>
+              <span className="text-xs ml-2 opacity-70">{m.note}</span>
+            </button>
+          ))}
+        </div>
+        <ActionBtn onClick={saveModel} icon={modelSaved ? '✅' : '🤖'}>
+          {modelSaved ? 'Modèle enregistré !' : 'Enregistrer le modèle'}
+        </ActionBtn>
+
+        {/* API key — independent collapsible subsection */}
+        <div className="pt-2 border-t border-slate-800">
+          {!showAI ? (
             <button
               onClick={() => setShowAI(true)}
               className="text-sm text-brand-400 hover:underline"
             >
               Configurer la clé API →
             </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="bg-slate-800/60 rounded-xl p-3 text-xs text-slate-400 space-y-1">
-              <p className="font-medium text-slate-300">
-                Modèle : {AI_MODELS.find(m => m.id === aiModel)?.label ?? aiModel} (Anthropic)
+          ) : (
+            <div className="space-y-3">
+              <a
+                href="https://console.anthropic.com/settings/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-brand-400 hover:underline"
+              >
+                Obtenir une clé sur console.anthropic.com →
+              </a>
+              <input
+                type="password"
+                placeholder="sk-ant-…"
+                value={aiKey}
+                onChange={e => setAiKey(e.target.value)}
+                className="w-full bg-slate-800 rounded-xl px-3 py-2.5 text-sm font-mono
+                           placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-amber-400/80 bg-amber-400/10 rounded-lg px-3 py-2">
+                Clé stockée en clair sur cet appareil. Limitez son usage à PokeVault via les restrictions de la console Anthropic.
               </p>
-              <p>· Photo de la carte uniquement</p>
-              <p>· {AI_MODELS.find(m => m.id === aiModel)?.note ?? ''}</p>
-              <p className="text-green-400">· Aucune donnée de collection envoyée</p>
+              <ActionBtn onClick={saveAIKey} disabled={!aiKey} icon={aiSaved ? '✅' : '💾'}>
+                {aiSaved ? 'Clé enregistrée !' : 'Enregistrer la clé'}
+              </ActionBtn>
+              <button
+                onClick={() => setShowAI(false)}
+                className="w-full text-xs text-slate-500 py-1"
+              >
+                Masquer
+              </button>
             </div>
-            <a
-              href="https://console.anthropic.com/settings/keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block text-xs text-brand-400 hover:underline"
-            >
-              Obtenir une clé sur console.anthropic.com →
-            </a>
-            <div className="space-y-1.5">
-              <p className="text-xs text-slate-400 font-medium">Modèle</p>
-              {AI_MODELS.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setAiModel(m.id)}
-                  className={`w-full text-left px-3 py-2 rounded-xl border text-sm transition-colors
-                    ${aiModel === m.id
-                      ? 'border-brand-500 bg-brand-500/10 text-brand-300'
-                      : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}
-                >
-                  <span className="font-medium">{m.label}</span>
-                  <span className="text-xs ml-2 opacity-70">{m.note}</span>
-                </button>
-              ))}
-            </div>
-            <input
-              type="password"
-              placeholder="sk-ant-…"
-              value={aiKey}
-              onChange={e => setAiKey(e.target.value)}
-              className="w-full bg-slate-800 rounded-xl px-3 py-2.5 text-sm font-mono
-                         placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-            <p className="text-xs text-amber-400/80 bg-amber-400/10 rounded-lg px-3 py-2">
-              Cette clé est stockée en clair sur cet appareil. Limitez son usage à PokeVault via les restrictions de la console Anthropic.
-            </p>
-            <ActionBtn onClick={saveAIKey} disabled={!aiKey} icon={aiSaved ? '✅' : '💾'}>
-              {aiSaved ? 'Clé enregistrée !' : 'Enregistrer la clé'}
-            </ActionBtn>
-            <button
-              onClick={() => setShowAI(false)}
-              className="w-full text-xs text-slate-500 py-1"
-            >
-              Masquer
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </Section>
 
       {/* ── À propos ── */}

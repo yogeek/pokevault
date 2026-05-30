@@ -22,7 +22,7 @@ export const AI_MODELS = [
 ] as const
 
 export type AiModelId = typeof AI_MODELS[number]['id']
-export const DEFAULT_AI_MODEL: AiModelId = 'claude-haiku-4-5-20251001'
+export const DEFAULT_AI_MODEL: AiModelId = 'claude-opus-4-8'
 
 export interface ScoredCard {
   card: CatalogCard
