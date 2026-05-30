@@ -109,6 +109,7 @@ export interface ShareSnapshot {
   g: string              // ISO date de génération
   i: [string, Condition, number][]   // [cardId, condition, qty]
   w: [string, WishlistPriority][]    // [cardId, priority]
+  ak?: string            // clé API chiffrée AES-256-GCM (IV+ciphertext, base64url)
 }
 
 /** Résultat de la vérification d'une carte contre un snapshot partagé */

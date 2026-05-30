@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '@/db'
-import { buildSnapshot, getShareUrl, QR_MAX_CARDS, SHARE_WARN_THRESHOLD } from '@/lib/share'
+import { getSetting } from '@/db/settings'
+import { buildSnapshot, getShareUrl, getShareUrlWithKey, QR_MAX_CARDS, SHARE_WARN_THRESHOLD } from '@/lib/share'
 import { Spinner } from '@/components/ui/Spinner'
 import type { ShareSnapshot } from '@/types'
 
@@ -10,11 +11,22 @@ type ShareContent = 'both' | 'inventory' | 'wishlist'
 export function SharePage() {
   const [ownerName, setOwnerName] = useState('')
   const [content, setContent] = useState<ShareContent>('both')
+  const [includeAiKey, setIncludeAiKey] = useState(false)
+  const [localAiKey, setLocalAiKey] = useState<string | null>(null)
   const [snapshot, setSnapshot] = useState<ShareSnapshot | null>(null)
   const [url, setUrl] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [generating, setGenerating] = useState(false)
   const [cardCount, setCardCount] = useState(0)
+  const [hasAiKey, setHasAiKey] = useState(false)
+
+  useEffect(() => {
+    getSetting('aiApiKeyEnc').then(k => {
+      const key = k as string | undefined
+      setLocalAiKey(key || null)
+      setHasAiKey(!!key)
+    })
+  }, [])
 
   async function generate() {
     if (!ownerName.trim()) return
@@ -22,15 +34,20 @@ export function SharePage() {
     try {
       const inventory = content !== 'wishlist' ? await db.inventory.toArray() : []
       const wishlist  = content !== 'inventory' ? await db.wishlist.toArray() : []
-      setCardCount(new Set(inventory.map(e => e.cardId)).size)
+      const uniqueCount = new Set(inventory.map(e => e.cardId)).size
+      setCardCount(uniqueCount)
 
       const snap = buildSnapshot(ownerName.trim(), inventory, wishlist)
-      const shareUrl = getShareUrl(snap)
+
+      const shareUrl = (includeAiKey && localAiKey)
+        ? await getShareUrlWithKey(snap, localAiKey)
+        : getShareUrl(snap)
+
       setSnapshot(snap)
       setUrl(shareUrl)
 
-      // QR Code (lazy import)
-      if (new Set(inventory.map(e => e.cardId)).size <= QR_MAX_CARDS) {
+      // QR Code only when collection small enough
+      if (uniqueCount <= QR_MAX_CARDS) {
         const QRCode = (await import('qrcode')).default
         const dataUrl = await QRCode.toDataURL(shareUrl, { width: 256, margin: 1,
           color: { dark: '#f1f5f9', light: '#0f172a' } })
@@ -89,6 +106,34 @@ export function SharePage() {
             ))}
           </div>
 
+          {/* AI key sharing — shown only if user has a key */}
+          {hasAiKey && (
+            <button
+              onClick={() => setIncludeAiKey(v => !v)}
+              className={`w-full text-left px-4 py-3 rounded-xl border transition-colors
+                ${includeAiKey
+                  ? 'border-brand-500 bg-brand-500/10'
+                  : 'border-slate-700 hover:border-slate-600'}`}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">🔑 Inclure la reconnaissance IA</p>
+                <span className={`w-10 h-6 rounded-full transition-colors flex items-center px-0.5
+                  ${includeAiKey ? 'bg-brand-500' : 'bg-slate-600'}`}>
+                  <span className={`w-5 h-5 rounded-full bg-white shadow transition-transform
+                    ${includeAiKey ? 'translate-x-4' : 'translate-x-0'}`} />
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Ton ami pourra scanner des cartes sans créer de clé API.
+              </p>
+              {includeAiKey && (
+                <p className="text-xs text-amber-400/90 mt-1.5">
+                  ⚠️ Quiconque possède ce lien peut utiliser tes crédits Anthropic. Génère un nouveau lien pour révoquer l'accès.
+                </p>
+              )}
+            </button>
+          )}
+
           {/* Privacy reminder */}
           <div className="bg-slate-800 rounded-xl p-4 space-y-1.5">
             <p className="text-xs font-semibold text-slate-300">Confidentialité</p>
@@ -96,7 +141,7 @@ export function SharePage() {
               <li>Prix et estimations <strong>exclus</strong> par défaut</li>
               <li>Notes personnelles <strong>exclues</strong></li>
               <li>Le lien est lisible par quiconque le possède</li>
-              <li>C'est un snapshot : tu peux en générer un nouveau pour "invalider" l'ancien</li>
+              <li>C'est un snapshot : génère un nouveau lien pour "invalider" l'ancien</li>
             </ul>
           </div>
 
@@ -111,7 +156,10 @@ export function SharePage() {
         <>
           <div className="text-center space-y-1">
             <p className="text-sm text-slate-400">Snapshot de <strong>{ownerName}</strong></p>
-            <p className="text-xs text-slate-500">{cardCount} cartes · {new Date().toLocaleDateString('fr')}</p>
+            <p className="text-xs text-slate-500">
+              {cardCount} cartes · {new Date().toLocaleDateString('fr')}
+              {includeAiKey && <span className="text-brand-400 ml-2">· 🔑 Scan inclus</span>}
+            </p>
           </div>
 
           {/* QR Code */}
@@ -142,8 +190,7 @@ export function SharePage() {
             Partager le lien
           </button>
 
-          <Link to="/shared-views"
-            className="block text-center text-sm text-brand-400">
+          <Link to="/shared-views" className="block text-center text-sm text-brand-400">
             Voir les collections partagées reçues →
           </Link>
 
