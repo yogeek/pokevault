@@ -122,6 +122,10 @@ export function ScanPage() {
   const [addedCount, setAddedCount] = useState(0)
   const [adding, setAdding] = useState(false)
   const [fromHistory, setFromHistory] = useState(false)
+  const [dupesConfirm, setDupesConfirm] = useState<{
+    dupes: Array<{ card: CatalogCard; existingQty: number }>
+    toAdd: CatalogCard[]
+  } | null>(null)
   const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -480,13 +484,10 @@ export function ScanPage() {
     saveScan({ mode: 'page-result', scanType, result: [], pageResult: updatedResult, preview: preview ?? null, pageSelected: [...newSelected] })
   }, [pageResult, pageSelected, scanType, preview])
 
-  const addSelectedToCollection = useCallback(async () => {
-    if (adding) return
+  const doAdd = useCallback(async (toAdd: CatalogCard[]) => {
     setAdding(true)
+    setDupesConfirm(null)
     try {
-      const toAdd = pageResult
-        .map(d => d[0]?.card)
-        .filter((c): c is CatalogCard => !!c && pageSelected.has(c.id))
       await Promise.all(toAdd.map(card =>
         db.inventory.add({
           cardId: card.id,
@@ -515,7 +516,33 @@ export function ScanPage() {
     } finally {
       setAdding(false)
     }
-  }, [adding, pageResult, pageSelected, scanType, preview])
+  }, [pageResult, scanType, preview])
+
+  const addSelectedToCollection = useCallback(async () => {
+    if (adding) return
+    const toAdd = pageResult
+      .map(d => d[0]?.card)
+      .filter((c): c is CatalogCard => !!c && pageSelected.has(c.id))
+    if (toAdd.length === 0) return
+
+    // Check for cards already in the collection
+    const existing = await db.inventory
+      .where('cardId').anyOf(toAdd.map(c => c.id))
+      .toArray()
+    if (existing.length > 0) {
+      const qtyById = existing.reduce<Record<string, number>>((acc, e) => {
+        acc[e.cardId] = (acc[e.cardId] ?? 0) + e.qty
+        return acc
+      }, {})
+      const dupes = toAdd
+        .filter(c => qtyById[c.id] != null)
+        .map(c => ({ card: c, existingQty: qtyById[c.id] }))
+      setDupesConfirm({ dupes, toAdd })
+      return
+    }
+
+    await doAdd(toAdd)
+  }, [adding, pageResult, pageSelected, doAdd])
 
   const aiLoading = aiKey === undefined
   const aiConfigured = !!aiKey
@@ -528,6 +555,63 @@ export function ScanPage() {
         <MultiCardCelebration cards={celebrationCards} onDismiss={() => setCelebrationCards(null)} />
       )}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+
+      {/* Duplicates confirmation dialog */}
+      {dupesConfirm && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+            <div className="w-full max-w-lg bg-slate-900 rounded-3xl border border-slate-700 overflow-hidden">
+              <div className="px-5 pt-5 pb-4">
+                <div className="flex items-start gap-3 mb-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-semibold text-base">
+                      {dupesConfirm.dupes.length === 1
+                        ? '1 carte déjà dans la collection'
+                        : `${dupesConfirm.dupes.length} cartes déjà dans la collection`}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Voulez-vous quand même les ajouter en double&nbsp;?
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+                  {dupesConfirm.dupes.map(({ card, existingQty }) => (
+                    <div key={card.id} className="flex items-center gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
+                      <img
+                        src={card.imageUrl}
+                        alt={cardName(card)}
+                        className="w-7 h-10 object-cover rounded flex-shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate text-amber-200">{cardName(card)}</p>
+                        <p className="text-xs text-amber-400/80">
+                          Déjà {existingQty} exemplaire{existingQty > 1 ? 's' : ''} dans la collection
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDupesConfirm(null)}
+                    className="flex-1 py-2.5 rounded-2xl border border-slate-700 text-sm text-slate-300"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => doAdd(dupesConfirm.toAdd)}
+                    className="flex-1 py-2.5 rounded-2xl bg-brand-500 text-white text-sm font-semibold"
+                  >
+                    Ajouter quand même
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Candidate alternatives sheet */}
       {candidateSheet !== null && pageResult[candidateSheet] && (
