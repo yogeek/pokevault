@@ -70,6 +70,7 @@ function SharedViewContent({
   const catalog = useCatalogStore(s => s.catalog)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [scanResult, setScanResult] = useState<{ result: CheckResult; card?: CatalogCard } | null>(null)
   const [scanning, setScanning] = useState(false)
 
@@ -92,8 +93,8 @@ function SharedViewContent({
     return stopCamera
   }, [scanMode, startCamera, stopCamera])
 
-  const capture = useCallback(async () => {
-    if (!videoRef.current || !catalog) return
+  const processCanvas = useCallback(async (canvas: HTMLCanvasElement) => {
+    if (!catalog) return
     setScanning(true)
     setScanResult(null)
     try {
@@ -101,35 +102,57 @@ function SharedViewContent({
         getSetting('aiApiKeyEnc') as Promise<string | undefined>,
         getSetting('aiModel') as Promise<AiModelId | undefined>,
       ])
-      if (!apiKey) {
-        setScanResult({ result: { type: 'unknown' } })
-        return
-      }
+      if (!apiKey) { setScanResult({ result: { type: 'unknown' } }); return }
       const model = storedModel ?? DEFAULT_AI_MODEL
-      const video = videoRef.current
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      canvas.getContext('2d')!.drawImage(video, 0, 0)
       const cards = await recognizeCardWithClaude(canvas, apiKey, catalog, model)
       const detectedId = cards[0]?.id
-      if (!detectedId) {
-        setScanResult({ result: { type: 'unknown' } })
-        return
-      }
+      if (!detectedId) { setScanResult({ result: { type: 'unknown' } }); return }
       const result = checkCard(detectedId, snap)
       const card = catalog.cards.find(c => c.id === detectedId)
       setScanResult({ result, card })
-    } catch (err) {
-      console.error('AI scan failed:', err)
+    } catch {
       setScanResult({ result: { type: 'unknown' } })
     } finally {
       setScanning(false)
     }
   }, [catalog, snap])
 
+  const capture = useCallback(async () => {
+    if (!videoRef.current) return
+    const video = videoRef.current
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')!.drawImage(video, 0, 0)
+    await processCanvas(canvas)
+  }, [processCanvas])
+
+  const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string
+      if (!dataUrl) return
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext('2d')!.drawImage(img, 0, 0)
+        setScanMode(false)
+        processCanvas(canvas)
+      }
+      img.src = dataUrl
+    }
+    reader.readAsDataURL(file)
+  }, [processCanvas])
+
   return (
     <div className="pb-24 min-h-screen">
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+
       {/* Header */}
       <div className="px-4 pt-6 pb-4 space-y-2">
         <h1 className="text-2xl font-bold">Collection de {ownerName}</h1>
@@ -143,29 +166,44 @@ function SharedViewContent({
             ⚠️ Snapshot vieux de {daysOld} jours — peut ne plus être à jour.
           </p>
         )}
-        <button
-          onClick={onPin}
-          className="text-xs text-brand-400 hover:underline"
-        >
+        <button onClick={onPin} className="text-xs text-brand-400 hover:underline">
           📌 Épingler pour y accéder hors-ligne
         </button>
       </div>
 
       {/* Scan mode toggle */}
       {!scanMode ? (
-        <div className="px-4">
-          <button onClick={() => setScanMode(true)}
-            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-semibold
-                       py-4 rounded-2xl text-lg flex items-center justify-center gap-3">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
-            </svg>
-            Scanner en magasin
-          </button>
-          <p className="text-xs text-center text-slate-500 mt-2">
-            Scan une carte pour vérifier si {ownerName} l'a déjà ou la veut
+        <div className="px-4 space-y-2">
+          <div className="flex gap-2">
+            <button onClick={() => setScanMode(true)}
+              className="flex-1 bg-brand-500 hover:bg-brand-600 text-white font-semibold
+                         py-4 rounded-2xl flex flex-col items-center justify-center gap-1.5">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
+              </svg>
+              <span className="text-sm">Scanner</span>
+            </button>
+            <button onClick={() => fileInputRef.current?.click()}
+              disabled={scanning}
+              className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 font-semibold
+                         py-4 rounded-2xl flex flex-col items-center justify-center gap-1.5
+                         hover:border-brand-500/40 transition-colors disabled:opacity-50">
+              {scanning
+                ? <Spinner className="w-6 h-6 text-brand-400" />
+                : <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+              }
+              <span className="text-sm">{scanning ? 'Analyse…' : 'Galerie'}</span>
+            </button>
+          </div>
+          <p className="text-xs text-center text-slate-500">
+            Vérifie si {ownerName} a déjà ou veut une carte
           </p>
+
+          {scanResult && <ScanResultCard result={scanResult.result} card={scanResult.card} ownerName={ownerName} />}
         </div>
       ) : (
         <div className="space-y-4">
@@ -174,13 +212,25 @@ function SharedViewContent({
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-56 h-[312px] border-2 border-brand-400 rounded-xl opacity-60" />
             </div>
-            <div className="absolute bottom-6 inset-x-0 flex justify-center">
+            <div className="absolute bottom-6 inset-x-0 flex items-center justify-center gap-6">
               <button onClick={capture} disabled={scanning}
                 className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg disabled:opacity-50">
                 {scanning
                   ? <Spinner className="w-8 h-8 text-brand-500" />
                   : <div className="w-12 h-12 rounded-full bg-brand-500" />
                 }
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={scanning}
+                aria-label="Charger depuis la galerie"
+                className="w-12 h-12 rounded-full bg-slate-800/80 backdrop-blur border border-slate-600
+                           flex items-center justify-center text-slate-300 disabled:opacity-50"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
               </button>
             </div>
           </div>
