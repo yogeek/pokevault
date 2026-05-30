@@ -3,13 +3,13 @@ import { useState, useMemo, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName, cardSetName } from '@/lib/catalog'
+import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
 import { CardImage } from '@/components/ui/CardImage'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { useExportReminder } from '@/hooks/useExportReminder'
-import type { Condition } from '@/types'
+import type { CatalogCard, Condition } from '@/types'
 
 type SortKey = 'date' | 'name' | 'set' | 'qty' | 'hp'
 type ViewMode = 'grid' | 'list'
@@ -17,7 +17,9 @@ type ViewMode = 'grid' | 'list'
 export function CollectionPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [view, setView] = useState<ViewMode>('grid')
+  const [view, setView] = useState<ViewMode>(() =>
+    (localStorage.getItem('pokevault_view') as ViewMode | null) ?? 'grid'
+  )
   const [filterSet, setFilterSet] = useState('')
   const [filterCondition, setFilterCondition] = useState<Condition | ''>('')
   const [filterSupertype, setFilterSupertype] = useState('')
@@ -29,6 +31,7 @@ export function CollectionPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [evolutionSheet, setEvolutionSheet] = useState<CatalogCard | null>(null)
 
   const catalog = useCatalogStore(s => s.catalog)
   const showExportReminder = useExportReminder()
@@ -178,8 +181,96 @@ export function CollectionPage() {
     }
   }, [selectedIds, exitSelectMode])
 
+  // Evolution chain sheet data
+  const evoChain = useMemo(() => {
+    if (!evolutionSheet || !catalog) return []
+    return evolutionChain(catalog, evolutionSheet)
+  }, [evolutionSheet, catalog])
+
+  // Set of Pokémon (EN) names the user already has in collection
+  const ownedNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const id of Object.keys(grouped)) {
+      const n = cardById.get(id)?.name
+      if (n) names.add(n)
+    }
+    return names
+  }, [grouped, cardById])
+
   return (
     <div className="pb-24">
+      {/* Evolution sheet */}
+      {evolutionSheet && catalog && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/60" onClick={() => setEvolutionSheet(null)} />
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-slate-900 rounded-t-3xl border-t border-slate-800
+                          pb-[env(safe-area-inset-bottom)] max-w-lg mx-auto">
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            </div>
+            <div className="px-5 pb-6">
+              <h3 className="text-sm font-semibold text-slate-300 mb-1">
+                Lignée évolutive · {cardName(evolutionSheet)}
+              </h3>
+              {evoChain.length <= 1 ? (
+                <p className="text-xs text-slate-500 py-3">
+                  Données d'évolution non disponibles.{' '}
+                  Lancez <code className="text-slate-400">npm run update-catalog</code> pour les obtenir.
+                </p>
+              ) : (
+                <div className="mt-3 flex flex-col gap-2">
+                  {evoChain.map((engName, i) => {
+                    const sample = catalog.cards.find(c => c.name === engName)
+                    const displayName = sample ? (sample.nameFr ?? sample.name) : engName
+                    const owned = ownedNames.has(engName)
+                    const isCurrent = engName === evolutionSheet.name
+                    return (
+                      <div key={engName} className="flex items-center gap-3">
+                        {i > 0 && (
+                          <svg className="w-3 h-3 text-slate-600 flex-shrink-0 ml-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        )}
+                        <button
+                          onClick={() => { setEvolutionSheet(null); navigate(`/add?q=${encodeURIComponent(engName)}`) }}
+                          className={`flex-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors
+                            ${isCurrent
+                              ? 'bg-brand-500/15 border border-brand-500/40'
+                              : 'bg-slate-800 border border-transparent hover:border-slate-600'}`}
+                        >
+                          {sample && (
+                            <img
+                              src={sample.imageUrl}
+                              alt={displayName}
+                              className="w-8 h-11 object-cover rounded flex-shrink-0"
+                              onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-medium ${isCurrent ? 'text-brand-300' : ''}`}>{displayName}</p>
+                            <p className="text-xs text-slate-500">
+                              {owned ? '✓ Dans la collection' : 'Pas encore dans la collection'}
+                            </p>
+                          </div>
+                          <svg className="w-4 h-4 text-slate-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <button
+                onClick={() => setEvolutionSheet(null)}
+                className="w-full mt-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </>
+      )}
       {/* Header */}
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-2 space-y-2">
         <div className="flex items-center justify-between">
@@ -223,14 +314,14 @@ export function CollectionPage() {
                 </button>
                 <button
                   aria-label="Vue grille"
-                  onClick={() => setView('grid')}
+                  onClick={() => { setView('grid'); localStorage.setItem('pokevault_view', 'grid') }}
                   className={`p-2 rounded-lg ${view === 'grid' ? 'text-brand-500' : 'text-slate-400'}`}
                 >
                   <IconGrid className="w-5 h-5" />
                 </button>
                 <button
                   aria-label="Vue liste"
-                  onClick={() => setView('list')}
+                  onClick={() => { setView('list'); localStorage.setItem('pokevault_view', 'list') }}
                   className={`p-2 rounded-lg ${view === 'list' ? 'text-brand-500' : 'text-slate-400'}`}
                 >
                   <IconList className="w-5 h-5" />
@@ -473,6 +564,19 @@ export function CollectionPage() {
                   </div>
                 </div>
                 <span className="text-sm font-bold text-slate-300 shrink-0">×{total}</span>
+                {!selectMode && card?.supertype === 'Pokémon' && (
+                  <button
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); setEvolutionSheet(card) }}
+                    aria-label="Voir la lignée évolutive"
+                    className="flex-shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-brand-400
+                               hover:bg-brand-500/10 active:bg-brand-500/20 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
               </>
             )
             if (selectMode) {
