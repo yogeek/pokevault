@@ -475,7 +475,8 @@ export function ScanPage() {
 
   const toggleCard = useCallback((id: string) => {
     const next = new Set(pageSelected)
-    next.has(id) ? next.delete(id) : next.add(id)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
     setPageSelected(next)
     saveScan({ mode: 'page-result', scanType, result: [], pageResult, preview: preview ?? null, pageSelected: [...next] })
   }, [pageSelected, pageResult, scanType, preview])
