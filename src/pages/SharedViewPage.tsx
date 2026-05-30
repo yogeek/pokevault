@@ -56,14 +56,17 @@ export function SharedViewPage() {
       })
   }, [activeSnapshot, decKey])
 
-  // Auto-save the snapshot as soon as it's decoded (fragment visits only)
+  // Auto-save the snapshot as soon as it's decoded (fragment visits only).
+  // Strip the encrypted API key before persisting: it is useless without the
+  // decKey from the URL (never saved) and should not linger in IndexedDB.
   useEffect(() => {
     if (!activeSnapshot || !location.hash) return
+    const { ak: _ak, ...persisted } = activeSnapshot
     upsertSharedView({
       ownerName: activeSnapshot.n,
       source: 'url-fragment',
       generatedAt: activeSnapshot.g,
-      snapshotJson: JSON.stringify(activeSnapshot),
+      snapshotJson: JSON.stringify(persisted),
     })
   }, [activeSnapshot, location.hash])
 
@@ -108,6 +111,7 @@ function SharedViewContent({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [scanMode, setScanMode] = useState(false)
   const [scanResult, setScanResult] = useState<{ result: CheckResult; card?: CatalogCard } | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [localApiKey, setLocalApiKey] = useState<string | null>(null)
   const [tab, setTab] = useState<'scanner' | 'collection' | 'wishlist'>('scanner')
@@ -142,10 +146,14 @@ function SharedViewContent({
     if (!catalog) return
     setScanning(true)
     setScanResult(null)
+    setScanError(null)
     try {
       const storedModel = await getSetting('aiModel') as AiModelId | undefined
       const apiKey = localApiKey || guestApiKey
-      if (!apiKey) { setScanResult({ result: { type: 'unknown' } }); return }
+      if (!apiKey) {
+        setScanError('Aucune clé IA disponible. Le lien de partage ne contient peut-être pas de clé.')
+        return
+      }
       const model = storedModel ?? DEFAULT_AI_MODEL
       const cards = await recognizeCardWithClaude(canvas, apiKey, catalog, model)
       const detectedId = cards[0]?.id
@@ -153,8 +161,11 @@ function SharedViewContent({
       const result = checkCard(detectedId, snap)
       const card = catalog.cards.find(c => c.id === detectedId)
       setScanResult({ result, card })
-    } catch {
-      setScanResult({ result: { type: 'unknown' } })
+    } catch (e) {
+      // Surface the real error (invalid key, API/network failure, timeout)
+      // instead of masking it as a generic "card not recognized".
+      console.error('[share] scan failed:', e)
+      setScanError((e as Error).message || 'Le scan a échoué. Réessaie.')
     } finally {
       setScanning(false)
     }
@@ -329,6 +340,12 @@ function SharedViewContent({
               <p className="text-xs text-center text-slate-500">
                 Scanne une carte pour vérifier si {ownerName} l'a déjà ou la veut
               </p>
+              {scanError && (
+                <div className="mt-3 border border-red-500/30 bg-red-500/10 rounded-2xl p-4">
+                  <p className="text-sm font-semibold text-red-300">Échec du scan</p>
+                  <p className="text-xs text-red-400/90 mt-1">{scanError}</p>
+                </div>
+              )}
               {scanResult && <ScanResultCard result={scanResult.result} card={scanResult.card} ownerName={ownerName} />}
             </div>
           ) : (
@@ -360,6 +377,12 @@ function SharedViewContent({
                   </button>
                 </div>
               </div>
+              {scanError && (
+                <div className="mt-3 border border-red-500/30 bg-red-500/10 rounded-2xl p-4">
+                  <p className="text-sm font-semibold text-red-300">Échec du scan</p>
+                  <p className="text-xs text-red-400/90 mt-1">{scanError}</p>
+                </div>
+              )}
               {scanResult && <ScanResultCard result={scanResult.result} card={scanResult.card} ownerName={ownerName} />}
               <div className="px-4">
                 <button onClick={() => setScanMode(false)} className="text-sm text-slate-400">← Retour</button>

@@ -48,6 +48,20 @@ describe('encryptApiKey / decryptApiKey round-trip', () => {
     expect(recovered).toBe(original)
   })
 
+  it('round-trips a realistic full-length Anthropic key', async () => {
+    // Anthropic keys are ~108 chars: sk-ant-api03- + 95 base64-ish chars + suffix
+    const original = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8'.repeat(6) + '-_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AA'
+    const { encrypted, decKey } = await encryptApiKey(original)
+    const recovered = await decryptApiKey(encrypted, decKey)
+    expect(recovered).toBe(original)
+  })
+
+  it('fails to decrypt with a wrong key', async () => {
+    const { encrypted } = await encryptApiKey('sk-ant-secret')
+    const { decKey: otherKey } = await encryptApiKey('something-else')
+    await expect(decryptApiKey(encrypted, otherKey)).rejects.toThrow()
+  })
+
   it('encrypted value is a non-empty base64url string (no +/=/)', async () => {
     const { encrypted, decKey } = await encryptApiKey('test-key')
     expect(encrypted).not.toContain('+')
