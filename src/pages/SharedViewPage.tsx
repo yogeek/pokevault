@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShareStore } from '@/stores/share'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
+import type { CatalogData } from '@/lib/catalog'
 import { checkCard, decryptApiKey } from '@/lib/share'
+import { getGifts, addGift, removeGift } from '@/lib/gifts'
 import { upsertSharedView } from '@/db/sharing'
 import { recognizeCardWithClaude, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
@@ -115,6 +117,11 @@ function SharedViewContent({
   const [scanning, setScanning] = useState(false)
   const [localApiKey, setLocalApiKey] = useState<string | null>(null)
   const [tab, setTab] = useState<'scanner' | 'collection' | 'wishlist'>('scanner')
+  const [gifts, setGifts] = useState<string[]>(() => getGifts(ownerName))
+
+  const toggleCapture = useCallback((cardId: string, next: boolean) => {
+    setGifts(next ? addGift(ownerName, cardId) : removeGift(ownerName, cardId))
+  }, [ownerName])
 
   useEffect(() => {
     getSetting('aiApiKeyEnc').then(k => setLocalApiKey((k as string) || null))
@@ -346,7 +353,18 @@ function SharedViewContent({
                   <p className="text-xs text-red-400/90 mt-1">{scanError}</p>
                 </div>
               )}
-              {scanResult && <ScanResultCard result={scanResult.result} card={scanResult.card} ownerName={ownerName} />}
+              {scanResult && (
+                <ScanResultCard
+                  result={scanResult.result}
+                  card={scanResult.card}
+                  ownerName={ownerName}
+                  captured={!!scanResult.card && gifts.includes(scanResult.card.id)}
+                  onToggleCapture={toggleCapture}
+                />
+              )}
+              {gifts.length > 0 && (
+                <GiftRecap gifts={gifts} ownerName={ownerName} catalog={catalog} onRelease={id => toggleCapture(id, false)} />
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -383,7 +401,15 @@ function SharedViewContent({
                   <p className="text-xs text-red-400/90 mt-1">{scanError}</p>
                 </div>
               )}
-              {scanResult && <ScanResultCard result={scanResult.result} card={scanResult.card} ownerName={ownerName} />}
+              {scanResult && (
+                <ScanResultCard
+                  result={scanResult.result}
+                  card={scanResult.card}
+                  ownerName={ownerName}
+                  captured={!!scanResult.card && gifts.includes(scanResult.card.id)}
+                  onToggleCapture={toggleCapture}
+                />
+              )}
               <div className="px-4">
                 <button onClick={() => setScanMode(false)} className="text-sm text-slate-400">← Retour</button>
               </div>
@@ -446,53 +472,214 @@ function SharedViewContent({
   )
 }
 
+// ─── Pokéball ────────────────────────────────────────────────────────────────
+// CSS/SVG Pokéball. `state` drives the animation: idle wobble while waiting,
+// shake during a capture, caught (static, with a glow) once secured.
+
+function Pokeball({ state = 'idle', className = '' }: {
+  state?: 'idle' | 'shaking' | 'caught'
+  className?: string
+}) {
+  const anim = state === 'shaking' ? 'animate-capture-shake'
+             : state === 'idle'    ? 'animate-wobble'
+             : ''
+  return (
+    <svg viewBox="0 0 100 100" className={`${className} ${anim}`} style={{ transformOrigin: '50% 55%' }}>
+      <defs>
+        <clipPath id="pb-clip"><circle cx="50" cy="50" r="44" /></clipPath>
+      </defs>
+      <g clipPath="url(#pb-clip)">
+        <rect x="0" y="0"  width="100" height="50" fill="#ef4444" />
+        <rect x="0" y="50" width="100" height="50" fill="#f8fafc" />
+      </g>
+      <circle cx="50" cy="50" r="44" fill="none" stroke="#0f172a" strokeWidth="6" />
+      <rect x="6" y="46" width="88" height="8" fill="#0f172a" />
+      <circle cx="50" cy="50" r="15" fill="#0f172a" />
+      <circle cx="50" cy="50" r="10" fill="#f8fafc" />
+      <circle cx="50" cy="50" r="5"  fill={state === 'caught' ? '#22c55e' : '#cbd5e1'} />
+    </svg>
+  )
+}
+
+// ─── Scan result ─────────────────────────────────────────────────────────────
+
 function ScanResultCard({
-  result, card, ownerName,
-}: { result: CheckResult; card?: CatalogCard; ownerName: string }) {
-  const bg = result.type === 'in-collection' ? 'border-green-500 bg-green-500/10'
-           : result.type === 'in-wishlist'   ? 'border-amber-400 bg-amber-400/10'
-           : result.type === 'absent'        ? 'border-slate-600 bg-slate-800'
-           : 'border-slate-700 bg-slate-800'
+  result, card, ownerName, captured, onToggleCapture,
+}: {
+  result: CheckResult
+  card?: CatalogCard
+  ownerName: string
+  captured: boolean
+  onToggleCapture: (cardId: string, next: boolean) => void
+}) {
+  // 'idle' | 'capturing' — local animation phase for the absent → capture flow
+  const [phase, setPhase] = useState<'idle' | 'capturing'>('idle')
 
-  const icon = result.type === 'in-collection' ? '✅'
-             : result.type === 'in-wishlist'   ? '🎁'
-             : result.type === 'absent'        ? '❌'
-             : '❓'
-
-  let title = ''
-  let detail = ''
-
-  if (result.type === 'in-collection') {
-    const summary = result.entries.map(([c, q]) => `${q}× ${c}`).join(', ')
-    title = `${ownerName} l'a déjà !`
-    detail = summary
-  } else if (result.type === 'in-wishlist') {
-    const labels: Record<number, string> = { 1: 'haute', 2: 'moyenne', 3: 'faible' }
-    title = `${ownerName} veut cette carte !`
-    detail = `Priorité ${labels[result.priority] ?? ''} — parfait comme cadeau !`
-  } else if (result.type === 'absent') {
-    title = `${ownerName} n'a pas cette carte`
-    detail = `Elle n'est pas non plus dans sa wishlist.`
-  } else {
-    title = 'Carte non reconnue'
-    detail = 'Essaie de mieux cadrer ou recherche manuellement.'
+  function launchCapture() {
+    if (!card) return
+    setPhase('capturing')
+    // Let the throw + shake play, then commit and reveal the success state
+    setTimeout(() => { onToggleCapture(card.id, true); setPhase('idle') }, 1600)
   }
 
-  return (
-    <div className={`mt-3 border rounded-2xl p-4 flex items-start gap-4 ${bg}`}>
-      <span className="text-4xl leading-none">{icon}</span>
-      <div className="flex-1">
-        {card && (
-          <div className="flex items-center gap-2 mb-2">
-            <CardImage src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
-            <div>
-              <p className="text-sm font-semibold">{cardName(card)}</p>
-              <p className="text-xs text-slate-400">{card.setNameFr ?? card.setName}</p>
+  const cardThumb = card && (
+    <div className="flex items-center gap-2">
+      <CardImage src={card.imageUrl} alt={cardName(card)} className="w-9 h-12 object-cover rounded" />
+      <div>
+        <p className="text-sm font-semibold">{cardName(card)}</p>
+        <p className="text-xs text-slate-400">{card.setNameFr ?? card.setName}</p>
+      </div>
+    </div>
+  )
+
+  // ── Absent: the gift opportunity, with the capture experience ──
+  if (result.type === 'absent') {
+    if (captured) {
+      return (
+        <div className="mt-3 border border-green-500/60 bg-green-500/10 rounded-2xl p-4">
+          <div className="flex items-center gap-3">
+            <Pokeball state="caught" className="w-12 h-12 shrink-0 drop-shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+            <div className="flex-1">
+              <p className="font-semibold text-base text-green-300 animate-pop-in">Capturé ! 🎉</p>
+              <p className="text-sm text-slate-300 mt-0.5">
+                Ajouté à tes cadeaux pour <strong>{ownerName}</strong>.
+              </p>
             </div>
           </div>
+          {cardThumb && <div className="mt-3">{cardThumb}</div>}
+          <button
+            onClick={() => card && onToggleCapture(card.id, false)}
+            className="mt-3 text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+          >
+            Relâcher ce Pokémon
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="mt-3 border border-brand-500/40 bg-slate-800 rounded-2xl p-4">
+        <div className="flex items-center gap-4">
+          {/* Card flies into the ball during capture */}
+          <div className="shrink-0">
+            {card && (
+              <CardImage
+                src={card.imageUrl}
+                alt={cardName(card)}
+                className={`w-14 h-20 object-cover rounded-lg shadow-lg ${phase === 'capturing' ? 'animate-card-suck' : ''}`}
+              />
+            )}
+          </div>
+          <div className="relative shrink-0">
+            <Pokeball state={phase === 'capturing' ? 'shaking' : 'idle'} className="w-14 h-14" />
+            {phase === 'capturing' && (
+              <>
+                <span className="absolute -top-1 -right-1 text-lg animate-sparkle">✨</span>
+                <span className="absolute -bottom-1 -left-1 text-base animate-sparkle" style={{ animationDelay: '0.15s' }}>⭐</span>
+              </>
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-base">{ownerName} n'a pas cette carte</p>
+            <p className="text-sm text-slate-400 mt-0.5">
+              {phase === 'capturing' ? 'Lancer en cours…' : `Souhaites-tu capturer ce Pokémon pour ${ownerName} ?`}
+            </p>
+          </div>
+        </div>
+        {card && (
+          <p className="text-xs text-slate-500 mt-2">{cardName(card)} · {card.setNameFr ?? card.setName}</p>
         )}
-        <p className="font-semibold text-base">{title}</p>
-        <p className="text-sm text-slate-400 mt-0.5">{detail}</p>
+        <button
+          onClick={launchCapture}
+          disabled={phase === 'capturing'}
+          className="mt-3 w-full bg-brand-500 hover:bg-brand-600 text-white font-semibold
+                     py-2.5 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          <Pokeball state={phase === 'capturing' ? 'shaking' : 'idle'} className="w-5 h-5" />
+          {phase === 'capturing' ? 'Capture…' : 'Capturer ce Pokémon'}
+        </button>
+      </div>
+    )
+  }
+
+  // ── Already in collection ──
+  if (result.type === 'in-collection') {
+    const summary = result.entries.map(([c, q]) => `${q}× ${c}`).join(', ')
+    return (
+      <div className="mt-3 border border-green-500 bg-green-500/10 rounded-2xl p-4 flex items-start gap-4">
+        <Pokeball state="caught" className="w-11 h-11 shrink-0" />
+        <div className="flex-1">
+          {cardThumb && <div className="mb-2">{cardThumb}</div>}
+          <p className="font-semibold text-base">Pokémon déjà capturé !</p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            {ownerName} a déjà cette carte dans sa collection{summary ? ` (${summary})` : ''}.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── In wishlist ──
+  if (result.type === 'in-wishlist') {
+    const labels: Record<number, string> = { 1: 'haute', 2: 'moyenne', 3: 'faible' }
+    return (
+      <div className="mt-3 border border-amber-400 bg-amber-400/10 rounded-2xl p-4 flex items-start gap-4">
+        <span className="text-4xl leading-none">🎁</span>
+        <div className="flex-1">
+          {cardThumb && <div className="mb-2">{cardThumb}</div>}
+          <p className="font-semibold text-base">{ownerName} veut cette carte !</p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Priorité {labels[result.priority] ?? ''} — parfait comme cadeau !
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Unknown ──
+  return (
+    <div className="mt-3 border border-slate-700 bg-slate-800 rounded-2xl p-4 flex items-start gap-4">
+      <span className="text-4xl leading-none">❓</span>
+      <div className="flex-1">
+        <p className="font-semibold text-base">Carte non reconnue</p>
+        <p className="text-sm text-slate-400 mt-0.5">Essaie de mieux cadrer ou recherche manuellement.</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Captured gifts recap ─────────────────────────────────────────────────────
+
+function GiftRecap({ gifts, ownerName, catalog, onRelease }: {
+  gifts: string[]
+  ownerName: string
+  catalog: CatalogData | null
+  onRelease: (cardId: string) => void
+}) {
+  const cards = catalog
+    ? gifts.map(id => catalog.cards.find(c => c.id === id)).filter((c): c is CatalogCard => !!c)
+    : []
+  return (
+    <div className="mt-4 border border-slate-700 bg-slate-800/60 rounded-2xl p-4">
+      <p className="text-sm font-semibold flex items-center gap-2">
+        <Pokeball state="caught" className="w-5 h-5" />
+        {gifts.length} Pokémon capturé{gifts.length > 1 ? 's' : ''} pour {ownerName}
+      </p>
+      <div className="grid grid-cols-4 gap-2 mt-3">
+        {cards.map(card => (
+          <button
+            key={card.id}
+            onClick={() => onRelease(card.id)}
+            title="Relâcher"
+            className="relative group"
+          >
+            <CardImage src={card.imageUrl} alt={cardName(card)} className="w-full object-cover aspect-[2.5/3.5] rounded-lg" />
+            <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/50
+                             text-transparent group-hover:text-white text-xs font-semibold rounded-lg transition-colors">
+              Relâcher
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   )
