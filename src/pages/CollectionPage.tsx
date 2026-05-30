@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
@@ -22,6 +22,10 @@ export function CollectionPage() {
   const [sort, setSort] = useState<SortKey>('date')
   const [showFilters, setShowFilters] = useState(false)
   const [showAddSheet, setShowAddSheet] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const catalog = useCatalogStore(s => s.catalog)
   const showExportReminder = useExportReminder()
@@ -115,40 +119,92 @@ export function CollectionPage() {
 
   const hasActiveFilters = !!filterSet || !!filterCondition || !!search
 
+  const toggleSelect = useCallback((cardId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(cardId)) next.delete(cardId)
+      else next.add(cardId)
+      return next
+    })
+  }, [])
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setShowDeleteConfirm(false)
+  }, [])
+
+  const deleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    setDeleting(true)
+    try {
+      await db.inventory.where('cardId').anyOf([...selectedIds]).delete()
+    } finally {
+      setDeleting(false)
+      exitSelectMode()
+    }
+  }, [selectedIds, exitSelectMode])
+
   return (
     <div className="pb-24">
       {/* Header */}
       <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur px-4 pt-4 pb-2 space-y-2">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Ma collection</h1>
-            <p className="text-xs text-slate-500">
-              {displayedCards.length} uniques · {totalCards} total
-            </p>
-          </div>
-          <div className="flex gap-1">
-            <button
-              onClick={() => setShowFilters(f => !f)}
-              aria-label="Filtres"
-              className={`p-2 rounded-lg transition-colors ${showFilters || hasActiveFilters ? 'text-brand-500 bg-brand-500/10' : 'text-slate-400'}`}
-            >
-              <IconFilter className="w-5 h-5" />
-            </button>
-            <button
-              aria-label="Vue grille"
-              onClick={() => setView('grid')}
-              className={`p-2 rounded-lg ${view === 'grid' ? 'text-brand-500' : 'text-slate-400'}`}
-            >
-              <IconGrid className="w-5 h-5" />
-            </button>
-            <button
-              aria-label="Vue liste"
-              onClick={() => setView('list')}
-              className={`p-2 rounded-lg ${view === 'list' ? 'text-brand-500' : 'text-slate-400'}`}
-            >
-              <IconList className="w-5 h-5" />
-            </button>
-          </div>
+          {selectMode ? (
+            <>
+              <div>
+                <p className="text-sm font-semibold text-slate-200">
+                  {selectedIds.size} sélectionnée{selectedIds.size !== 1 ? 's' : ''}
+                </p>
+                <p className="text-xs text-slate-500">sur {displayedCards.length} carte{displayedCards.length !== 1 ? 's' : ''}</p>
+              </div>
+              <button
+                onClick={exitSelectMode}
+                className="text-sm text-brand-400 font-medium px-2 py-1"
+              >
+                Annuler
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <h1 className="text-xl font-bold">Ma collection</h1>
+                <p className="text-xs text-slate-500">
+                  {displayedCards.length} uniques · {totalCards} total
+                </p>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => { setSelectMode(true); setShowFilters(false) }}
+                  aria-label="Sélection multiple"
+                  className="p-2 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <IconSelect className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setShowFilters(f => !f)}
+                  aria-label="Filtres"
+                  className={`p-2 rounded-lg transition-colors ${showFilters || hasActiveFilters ? 'text-brand-500 bg-brand-500/10' : 'text-slate-400'}`}
+                >
+                  <IconFilter className="w-5 h-5" />
+                </button>
+                <button
+                  aria-label="Vue grille"
+                  onClick={() => setView('grid')}
+                  className={`p-2 rounded-lg ${view === 'grid' ? 'text-brand-500' : 'text-slate-400'}`}
+                >
+                  <IconGrid className="w-5 h-5" />
+                </button>
+                <button
+                  aria-label="Vue liste"
+                  onClick={() => setView('list')}
+                  className={`p-2 rounded-lg ${view === 'list' ? 'text-brand-500' : 'text-slate-400'}`}
+                >
+                  <IconList className="w-5 h-5" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Search */}
@@ -162,7 +218,7 @@ export function CollectionPage() {
         />
 
         {/* Filters panel */}
-        {showFilters && (
+        {showFilters && !selectMode && (
           <div className="space-y-2 pt-1">
             <div className="flex gap-2">
               <select
@@ -254,6 +310,36 @@ export function CollectionPage() {
             const card = catalog?.cards.find(c => c.id === cardId)
             const total = grouped[cardId].reduce((s, e) => s + e.qty, 0)
             const inWishlist = wishlistIds?.has(cardId)
+            const isSelected = selectedIds.has(cardId)
+            if (selectMode) {
+              return (
+                <button
+                  key={cardId}
+                  onClick={() => toggleSelect(cardId)}
+                  className="relative text-left"
+                >
+                  <div className={`transition-all duration-150 ${isSelected ? 'scale-95 ring-2 ring-brand-500 rounded-lg' : ''}`}>
+                    {card
+                      ? <CardThumbnail card={card} qty={total} />
+                      : (
+                        <div className="aspect-[2.5/3.5] bg-slate-800 rounded-lg
+                                        flex items-center justify-center text-[10px] text-slate-500 p-1 text-center">
+                          {cardId}
+                        </div>
+                      )
+                    }
+                  </div>
+                  <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
+                                  ${isSelected ? 'bg-brand-500 border-brand-500' : 'bg-black/40 border-white/60'}`}>
+                    {isSelected && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              )
+            }
             return (
               <Link key={cardId} to={`/card/${cardId}`} className="relative">
                 {card
@@ -279,12 +365,19 @@ export function CollectionPage() {
             const entries = grouped[cardId]
             const total = entries.reduce((s, e) => s + e.qty, 0)
             const inWishlist = wishlistIds?.has(cardId)
-            return (
-              <Link
-                key={cardId}
-                to={`/card/${cardId}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 active:bg-slate-800"
-              >
+            const isSelected = selectedIds.has(cardId)
+            const rowContent = (
+              <>
+                {selectMode && (
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors
+                                  ${isSelected ? 'bg-brand-500 border-brand-500' : 'border-slate-500'}`}>
+                    {isSelected && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                )}
                 {card ? (
                   <img
                     src={card.imageUrl}
@@ -298,7 +391,7 @@ export function CollectionPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-medium truncate">{card ? cardName(card) : cardId}</p>
-                    {inWishlist && <span className="text-xs">🎁</span>}
+                    {inWishlist && !selectMode && <span className="text-xs">🎁</span>}
                   </div>
                   <p className="text-xs text-slate-400 truncate">
                     {card && cardSetName(card)} · #{card?.number}
@@ -313,10 +406,98 @@ export function CollectionPage() {
                   </div>
                 </div>
                 <span className="text-sm font-bold text-slate-300 shrink-0">×{total}</span>
+              </>
+            )
+            if (selectMode) {
+              return (
+                <button
+                  key={cardId}
+                  onClick={() => toggleSelect(cardId)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
+                              ${isSelected ? 'bg-brand-500/10' : 'active:bg-slate-800/60'}`}
+                >
+                  {rowContent}
+                </button>
+              )
+            }
+            return (
+              <Link
+                key={cardId}
+                to={`/card/${cardId}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 active:bg-slate-800"
+              >
+                {rowContent}
               </Link>
             )
           })}
         </div>
+      )}
+
+      {/* Select-mode action bar */}
+      {selectMode && (
+        <div className="fixed bottom-20 inset-x-0 z-40 px-4 flex justify-center">
+          <div className="w-full max-w-lg bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl
+                          px-4 py-3 flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (selectedIds.size === displayedCards.length) setSelectedIds(new Set())
+                else setSelectedIds(new Set(displayedCards))
+              }}
+              className="text-xs text-slate-400 hover:text-slate-200 shrink-0"
+            >
+              {selectedIds.size === displayedCards.length ? 'Désélect. tout' : 'Tout sélect.'}
+            </button>
+            <div className="flex-1" />
+            <button
+              onClick={() => selectedIds.size > 0 && setShowDeleteConfirm(true)}
+              disabled={selectedIds.size === 0}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors
+                          ${selectedIds.size > 0
+                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 active:bg-red-500/40'
+                            : 'bg-slate-700/50 text-slate-600 cursor-not-allowed'}`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Supprimer {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/60" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 bg-slate-900 border border-slate-700
+                          rounded-2xl shadow-2xl p-6 max-w-sm mx-auto">
+            <h2 className="text-base font-bold text-white mb-2">Confirmer la suppression</h2>
+            <p className="text-sm text-slate-300 mb-1">
+              Supprimer <span className="font-bold text-red-400">{selectedIds.size} carte{selectedIds.size !== 1 ? 's' : ''}</span> de la collection ?
+            </p>
+            <p className="text-xs text-slate-500 mb-6">
+              Toutes les copies de ces cartes seront retirées. Cette action est irréversible.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-sm font-medium text-slate-300
+                           hover:bg-slate-700 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={deleteSelected}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-sm font-bold text-white
+                           hover:bg-red-600 active:bg-red-700 transition-colors disabled:opacity-60"
+              >
+                {deleting ? 'Suppression…' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Add bottom sheet */}
@@ -370,17 +551,19 @@ export function CollectionPage() {
       )}
 
       {/* FAB */}
-      <button
-        onClick={() => setShowAddSheet(true)}
-        aria-label="Ajouter une carte"
-        className="fixed bottom-20 right-4 z-40 w-14 h-14 bg-brand-500 hover:bg-brand-600
-                   rounded-full shadow-lg flex items-center justify-center transition-colors
-                   active:scale-95"
-      >
-        <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
+      {!selectMode && (
+        <button
+          onClick={() => setShowAddSheet(true)}
+          aria-label="Ajouter une carte"
+          className="fixed bottom-20 right-4 z-40 w-14 h-14 bg-brand-500 hover:bg-brand-600
+                     rounded-full shadow-lg flex items-center justify-center transition-colors
+                     active:scale-95"
+        >
+          <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
@@ -398,6 +581,15 @@ function EmptyState() {
         Ajouter une carte
       </Link>
     </div>
+  )
+}
+
+function IconSelect({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l-2 2 4-4" />
+    </svg>
   )
 }
 
