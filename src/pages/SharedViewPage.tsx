@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShareStore } from '@/stores/share'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName } from '@/lib/catalog'
@@ -73,6 +73,11 @@ function SharedViewContent({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [scanResult, setScanResult] = useState<{ result: CheckResult; card?: CatalogCard } | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [apiKeyMissing, setApiKeyMissing] = useState(false)
+
+  useEffect(() => {
+    getSetting('aiApiKeyEnc').then(k => setApiKeyMissing(!k))
+  }, [])
 
   const startCamera = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -170,6 +175,26 @@ function SharedViewContent({
           📌 Épingler pour y accéder hors-ligne
         </button>
       </div>
+
+      {apiKeyMissing && (
+        <div className="mx-4 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-300">Clé API requise pour scanner</p>
+            <p className="text-xs text-amber-400/80 mt-0.5">
+              La reconnaissance IA nécessite une clé API Claude (Anthropic).
+            </p>
+            <Link
+              to="/settings"
+              className="inline-block mt-2 text-xs font-semibold text-amber-300 underline underline-offset-2"
+            >
+              Configurer dans les Réglages →
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Scan mode toggle */}
       {!scanMode ? (
