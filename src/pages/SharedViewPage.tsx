@@ -514,6 +514,8 @@ function ScanResultCard({
 }) {
   // 'idle' | 'capturing' — local animation phase for the absent → capture flow
   const [phase, setPhase] = useState<'idle' | 'capturing'>('idle')
+  // Two-step confirmation before releasing a captured Pokémon
+  const [confirmRelease, setConfirmRelease] = useState(false)
 
   function launchCapture() {
     if (!card) return
@@ -547,12 +549,30 @@ function ScanResultCard({
             </div>
           </div>
           {cardThumb && <div className="mt-3">{cardThumb}</div>}
-          <button
-            onClick={() => card && onToggleCapture(card.id, false)}
-            className="mt-3 text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
-          >
-            Relâcher ce Pokémon
-          </button>
+          {!confirmRelease ? (
+            <button
+              onClick={() => setConfirmRelease(true)}
+              className="mt-3 text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+            >
+              Relâcher ce Pokémon
+            </button>
+          ) : (
+            <div className="mt-3 flex items-center gap-3">
+              <span className="text-xs text-slate-300">Relâcher ce Pokémon ?</span>
+              <button
+                onClick={() => { setConfirmRelease(false); if (card) onToggleCapture(card.id, false) }}
+                className="text-xs font-semibold text-red-300 hover:text-red-200"
+              >
+                Oui, relâcher
+              </button>
+              <button
+                onClick={() => setConfirmRelease(false)}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Annuler
+              </button>
+            </div>
+          )}
         </div>
       )
     }
@@ -656,6 +676,8 @@ function GiftRecap({ gifts, ownerName, catalog, onRelease }: {
   catalog: CatalogData | null
   onRelease: (cardId: string) => void
 }) {
+  // cardId currently awaiting release confirmation, if any
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const cards = catalog
     ? gifts.map(id => catalog.cards.find(c => c.id === id)).filter((c): c is CatalogCard => !!c)
     : []
@@ -667,18 +689,36 @@ function GiftRecap({ gifts, ownerName, catalog, onRelease }: {
       </p>
       <div className="grid grid-cols-4 gap-2 mt-3">
         {cards.map(card => (
-          <button
-            key={card.id}
-            onClick={() => onRelease(card.id)}
-            title="Relâcher"
-            className="relative group"
-          >
+          <div key={card.id} className="relative">
             <CardImage src={card.imageUrl} alt={cardName(card)} className="w-full object-cover aspect-[2.5/3.5] rounded-lg" />
-            <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/50
-                             text-transparent group-hover:text-white text-xs font-semibold rounded-lg transition-colors">
-              Relâcher
-            </span>
-          </button>
+            {/* Release affordance: a small ✕ badge, tap to ask confirmation */}
+            <button
+              onClick={() => setConfirmId(card.id)}
+              title="Relâcher"
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900/90 border border-slate-600
+                         text-slate-300 text-xs leading-none flex items-center justify-center hover:bg-red-500 hover:text-white"
+            >
+              ✕
+            </button>
+            {/* Inline confirmation overlay for this card */}
+            {confirmId === card.id && (
+              <div className="absolute inset-0 rounded-lg bg-slate-950/90 flex flex-col items-center justify-center gap-1.5 p-1 text-center">
+                <span className="text-[11px] text-slate-200 leading-tight">Relâcher ?</span>
+                <button
+                  onClick={() => { onRelease(card.id); setConfirmId(null) }}
+                  className="text-[11px] font-semibold text-red-300 hover:text-red-200"
+                >
+                  Oui
+                </button>
+                <button
+                  onClick={() => setConfirmId(null)}
+                  className="text-[11px] text-slate-400 hover:text-slate-200"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
+          </div>
         ))}
       </div>
     </div>
