@@ -22,6 +22,7 @@ interface PersistedScan {
   result: CatalogCard[]
   pageResult: ScoredCard[][]
   preview: string | null
+  pageSelected?: string[]
 }
 
 function loadScan(): PersistedScan | null {
@@ -70,7 +71,9 @@ export function ScanPage() {
   // pageResult: one ScoredCard[] per detected card (candidates sorted by confidence)
   const [pageResult, setPageResult] = useState<ScoredCard[][]>(saved?.pageResult ?? [])
   const [pageSelected, setPageSelected] = useState<Set<string>>(
-    new Set(saved?.pageResult?.map(d => d[0]?.card.id).filter(Boolean) ?? [])
+    saved?.pageSelected
+      ? new Set(saved.pageSelected)
+      : new Set(saved?.pageResult?.map(d => d[0]?.card.id).filter(Boolean) ?? [])
   )
   const [candidateSheet, setCandidateSheet] = useState<number | null>(null)
   const [sheetSearchQuery, setSheetSearchQuery] = useState('')
@@ -122,6 +125,38 @@ export function ScanPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryCtx])
 
+  // Back-button sentinel: when a lightbox or candidate sheet is open, push a dummy
+  // history entry (same URL, no navigation) so that the Android/browser back button
+  // closes the overlay instead of leaving the scan page entirely.
+  const sentinelPushed = useRef(false)
+  const ignoreNextPop  = useRef(false)
+
+  useEffect(() => {
+    const isOpen = candidateSheet !== null || lightbox !== null
+    if (isOpen && !sentinelPushed.current) {
+      window.history.pushState({ _scanOverlay: true }, '')
+      sentinelPushed.current = true
+    } else if (!isOpen && sentinelPushed.current) {
+      // Overlay closed via button — pop the sentinel we pushed
+      sentinelPushed.current = false
+      ignoreNextPop.current  = true
+      window.history.go(-1)
+    }
+  }, [candidateSheet, lightbox])
+
+  useEffect(() => {
+    const onPop = () => {
+      if (ignoreNextPop.current) { ignoreNextPop.current = false; return }
+      if (sentinelPushed.current) {
+        sentinelPushed.current = false
+        setLightbox(null)
+        setCandidateSheet(null)
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   // Live catalog search inside the candidate sheet
   const sheetSearchResults = useMemo((): ScoredCard[] => {
     const q = sheetSearchQuery.trim()
@@ -158,11 +193,12 @@ export function ScanPage() {
     setMode('recognizing')
     try {
       const detections = await recognizePageWithClaude(canvas, key, catalog, aiModel)
+      const allSelected = detections.map(d => d[0]?.card.id).filter((id): id is string => !!id)
       setPageResult(detections)
-      setPageSelected(new Set(detections.map(d => d[0]?.card.id).filter(Boolean)))
+      setPageSelected(new Set(allSelected))
       setAddedCount(0)
       setMode('page-result')
-      saveScan({ mode: 'page-result', scanType, result: [], pageResult: detections, preview: currentPreview })
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: detections, preview: currentPreview, pageSelected: allSelected })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -180,16 +216,13 @@ export function ScanPage() {
       const newCandidates = await recognizeCardWithClaudeScored(canvas, key, catalog, aiModel, ctx.rejectedIds)
       if (newCandidates.length > 0) {
         const updated = pageResult.map((d, i) => i === ctx.detectionIdx ? newCandidates : d)
+        const oldBest = pageResult[ctx.detectionIdx]?.[0]?.card.id
+        const newSelected = new Set(pageSelected)
+        if (oldBest) newSelected.delete(oldBest)
         setPageResult(updated)
-        // Deselect the retried detection — user should confirm the new proposals
-        setPageSelected(prev => {
-          const next = new Set(prev)
-          const oldBest = pageResult[ctx.detectionIdx]?.[0]?.card.id
-          if (oldBest) next.delete(oldBest)
-          return next
-        })
+        setPageSelected(newSelected)
         setRetryNoResult(prev => { const s = new Set(prev); s.delete(ctx.detectionIdx); return s })
-        saveScan({ mode: 'page-result', scanType, result: [], pageResult: updated, preview: preview ?? null })
+        saveScan({ mode: 'page-result', scanType, result: [], pageResult: updated, preview: preview ?? null, pageSelected: [...newSelected] })
       } else {
         setRetryNoResult(prev => new Set([...prev, ctx.detectionIdx]))
       }
@@ -199,7 +232,7 @@ export function ScanPage() {
       setRetryCtx(null)
       setMode('page-result')
     }
-  }, [retryCtx, catalog, checkApiKey, aiModel, pageResult, scanType, preview])
+  }, [retryCtx, catalog, checkApiKey, aiModel, pageResult, pageSelected, scanType, preview])
 
   const startRetry = useCallback((detectionIdx: number, rejectedIds: Set<string>) => {
     setRetryCtx({ detectionIdx, rejectedIds })
@@ -346,41 +379,36 @@ export function ScanPage() {
   }, [preview, catalog, scanType, runRecognition, runPageRecognition])
 
   const toggleCard = useCallback((id: string) => {
-    setPageSelected(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }, [])
+    const next = new Set(pageSelected)
+    next.has(id) ? next.delete(id) : next.add(id)
+    setPageSelected(next)
+    saveScan({ mode: 'page-result', scanType, result: [], pageResult, preview: preview ?? null, pageSelected: [...next] })
+  }, [pageSelected, pageResult, scanType, preview])
 
   const toggleAll = useCallback(() => {
-    const allIds = pageResult.map(d => d[0]?.card.id).filter(Boolean)
-    setPageSelected(prev =>
-      prev.size === pageResult.length ? new Set() : new Set(allIds)
-    )
-  }, [pageResult])
+    const allIds = pageResult.map(d => d[0]?.card.id).filter((id): id is string => !!id)
+    const next = pageSelected.size === pageResult.length ? new Set<string>() : new Set(allIds)
+    setPageSelected(next)
+    saveScan({ mode: 'page-result', scanType, result: [], pageResult, preview: preview ?? null, pageSelected: [...next] })
+  }, [pageResult, pageSelected, scanType, preview])
 
   // Pick a different candidate for a detection (reorders candidates so chosen is first)
   const pickCandidate = useCallback((detectionIdx: number, scoredCard: ScoredCard) => {
-    setPageResult(prev => {
-      const updated = prev.map((d, i) => {
-        if (i !== detectionIdx) return d
-        return [scoredCard, ...d.filter(sc => sc.card.id !== scoredCard.card.id)]
-      })
-      return updated
+    const updatedResult = pageResult.map((d, i) => {
+      if (i !== detectionIdx) return d
+      return [scoredCard, ...d.filter(sc => sc.card.id !== scoredCard.card.id)]
     })
-    // Swap selection: if old best was selected, select the new choice instead
     const oldBestId = pageResult[detectionIdx][0]?.card.id
+    const newSelected = new Set(pageSelected)
     if (oldBestId && pageSelected.has(oldBestId)) {
-      setPageSelected(prev => {
-        const next = new Set(prev)
-        next.delete(oldBestId)
-        next.add(scoredCard.card.id)
-        return next
-      })
+      newSelected.delete(oldBestId)
+      newSelected.add(scoredCard.card.id)
     }
+    setPageResult(updatedResult)
+    setPageSelected(newSelected)
     setCandidateSheet(null)
-  }, [pageResult, pageSelected])
+    saveScan({ mode: 'page-result', scanType, result: [], pageResult: updatedResult, preview: preview ?? null, pageSelected: [...newSelected] })
+  }, [pageResult, pageSelected, scanType, preview])
 
   const addSelectedToCollection = useCallback(async () => {
     const toAdd = pageResult
@@ -409,7 +437,7 @@ export function ScanPage() {
     if (remaining.length === 0) {
       clearScan()
     } else {
-      saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview })
+      saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview, pageSelected: [] })
     }
     setCelebrationCards(toAdd)
   }, [pageResult, pageSelected, scanType, preview])
