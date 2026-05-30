@@ -55,18 +55,41 @@ export function useSwUpdate() {
     try {
       const reg = await navigator.serviceWorker?.getRegistration()
       if (reg) {
-        // If the new SW is already waiting, activate it immediately
-        if (reg.waiting) {
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-          await new Promise(r => setTimeout(r, 200))
-        } else {
-          // Otherwise trigger the download and wait briefly
-          await reg.update().catch(() => {})
-          const waiting = (reg as ServiceWorkerRegistration).waiting
-          if (waiting) {
-            waiting.postMessage({ type: 'SKIP_WAITING' })
-            await new Promise(r => setTimeout(r, 200))
+        // Force-fetch the absolute latest SW before activating.
+        // This lets us skip intermediate builds (e.g. 54→55→56 in one reload)
+        // by waiting for the newest SW to finish installing, then SKIP_WAITING it.
+        // Falls back to whatever is already in reg.waiting on timeout / network error.
+        const newerSw = await new Promise<ServiceWorker | null>(resolve => {
+          let done = false
+          const finish = (sw: ServiceWorker | null) => {
+            if (done) return
+            done = true
+            clearTimeout(timer)
+            reg.removeEventListener('updatefound', onUpdateFound)
+            resolve(sw)
           }
+
+          const timer = setTimeout(() => finish(null), 3000)
+
+          const onUpdateFound = () => {
+            const sw = reg.installing
+            if (!sw) return
+            sw.addEventListener('statechange', function handler() {
+              if (sw.state === 'installed') {
+                sw.removeEventListener('statechange', handler)
+                finish(sw)
+              }
+            })
+          }
+
+          reg.addEventListener('updatefound', onUpdateFound)
+          reg.update().catch(() => finish(null))
+        })
+
+        const sw = newerSw ?? reg.waiting
+        if (sw) {
+          sw.postMessage({ type: 'SKIP_WAITING' })
+          await new Promise(r => setTimeout(r, 200))
         }
       }
     } catch { /* ignore */ }
