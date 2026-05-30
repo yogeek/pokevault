@@ -2,6 +2,8 @@
 /**
  * Builds public/catalog.json from TCGdex (tcgdex.dev).
  * Fetches FR + EN in parallel per set → card has both name (EN) and nameFr (FR).
+ * Then enriches each card with hp, supertype and evolveFrom via per-card fetches
+ * (set listing only returns id/localId/name/image).
  * Usage: npm run update-catalog
  */
 
@@ -13,8 +15,9 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT = join(__dirname, '..', 'public', 'catalog.json')
 
-const BATCH = 5    // parallel set fetches
-const DELAY = 300  // ms between batches (rate-limit courtesy)
+const SET_BATCH  = 5    // parallel set fetches
+const CARD_BATCH = 20   // parallel individual card fetches for enrichment
+const DELAY      = 200  // ms between batches
 
 const sdkFr = new TCGdex('fr')
 const sdkEn = new TCGdex('en')
@@ -37,18 +40,20 @@ async function tryFetch(fn, label) {
 async function main() {
   console.log('=== TCGdex catalog builder ===\n')
 
+  // ── Step 1: sets list ────────────────────────────────────────────────────────
   console.log('1/3  Chargement de la liste des sets (FR)…')
   const setList = await tryFetch(() => sdkFr.fetchSets(), 'sets')
   if (!setList?.length) throw new Error('Aucun set retourné — vérifiez le réseau')
   console.log(`     ${setList.length} sets trouvés\n`)
 
+  // ── Step 2: per-set cards (names, images, rarity) ───────────────────────────
   console.log('2/3  Téléchargement des cartes par set (FR + EN en parallèle)…')
   const sets = []
   const cards = []
   let done = 0
 
-  for (let i = 0; i < setList.length; i += BATCH) {
-    const batch = setList.slice(i, i + BATCH)
+  for (let i = 0; i < setList.length; i += SET_BATCH) {
+    const batch = setList.slice(i, i + SET_BATCH)
 
     const results = await Promise.all(batch.map(async (sr) => {
       const [frSet, enSet] = await Promise.all([
@@ -75,7 +80,6 @@ async function main() {
         logoUrl:     sr.logo ?? '',
       })
 
-      // Index EN cards by localId for name + image lookup
       const enById = Object.fromEntries(
         (enSet?.cards ?? []).map(c => [c.localId, c])
       )
@@ -83,40 +87,72 @@ async function main() {
       for (const card of frSet.cards) {
         const enCard = enById[card.localId]
         const imageBase = card.image ?? enCard?.image ?? ''
-        // TCGdex category: 'Pokemon' | 'Trainer' | 'Energy'
-        const category = enCard?.category ?? card.category ?? 'Pokemon'
-        const supertype = category === 'Trainer' ? 'Trainer'
-          : category === 'Energy' ? 'Energy'
-          : 'Pokémon'
-        const entry = {
-          id:          `${sr.id}-${card.localId}`,
-          name:        enCard?.name ?? card.name,
-          nameFr:      card.name,
-          setId:       sr.id,
-          setName:     enSetName,
-          setNameFr:   frSet.name,
-          number:      card.localId,
-          total:       frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
-          rarity:      enCard?.rarity ?? card.rarity ?? '',
-          imageUrl:    imageBase ? `${imageBase}/high.webp` : '',
-          supertype,
-        }
-        // hp and evolveFrom may be present in the full API response
-        // even when the TypeScript CardResume type doesn't declare them
-        const hp = enCard?.hp ?? card.hp
-        if (hp != null) entry.hp = hp
-        const ef = enCard?.evolveFrom ?? card.evolveFrom
-        if (ef) entry.evolveFrom = ef
-        cards.push(entry)
+        cards.push({
+          id:        `${sr.id}-${card.localId}`,
+          name:      enCard?.name ?? card.name,
+          nameFr:    card.name,
+          setId:     sr.id,
+          setName:   enSetName,
+          setNameFr: frSet.name,
+          number:    card.localId,
+          total:     frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
+          rarity:    enCard?.rarity ?? card.rarity ?? '',
+          imageUrl:  imageBase ? `${imageBase}/high.webp` : '',
+          supertype: 'Pokémon',  // will be overwritten in step 3
+        })
       }
     }
 
-    if (i + BATCH < setList.length) await sleep(DELAY)
+    if (i + SET_BATCH < setList.length) await sleep(DELAY)
   }
 
   console.log(`\n     ${cards.length} cartes dans ${sets.length} sets\n`)
 
-  console.log('3/3  Écriture de catalog.json…')
+  // ── Step 3: enrich with hp, supertype, evolveFrom (per-card EN fetch) ───────
+  // The set listing only returns id/localId/name/image — category, hp and
+  // evolveFrom require the full card endpoint.
+  console.log('3/4  Enrichissement hp / supertype / evolveFrom (appels individuels)…')
+  console.log('     (peut prendre quelques minutes selon la connexion)\n')
+
+  // Build a lookup by id for fast patching
+  const cardById = Object.fromEntries(cards.map(c => [c.id, c]))
+  let enriched = 0
+  let failed = 0
+
+  for (let i = 0; i < cards.length; i += CARD_BATCH) {
+    const batch = cards.slice(i, i + CARD_BATCH)
+    await Promise.all(batch.map(async (stub) => {
+      const [setId, ...rest] = stub.id.split('-')
+      const localId = rest.join('-')
+      const full = await tryFetch(
+        () => sdkEn.fetchCard(localId, setId),
+        stub.id,
+      )
+      if (!full) { failed++; return }
+      enriched++
+      const entry = cardById[stub.id]
+      if (!entry) return
+      // supertype
+      const cat = full.category ?? 'Pokemon'
+      entry.supertype = cat === 'Trainer' ? 'Trainer'
+        : cat === 'Energy' ? 'Energy'
+        : 'Pokémon'
+      // hp
+      if (full.hp != null) entry.hp = full.hp
+      // evolveFrom
+      if (full.evolveFrom) entry.evolveFrom = full.evolveFrom
+    }))
+
+    if ((i / CARD_BATCH) % 50 === 0) {
+      process.stdout.write(`\r     ${Math.min(i + CARD_BATCH, cards.length)}/${cards.length} cartes enrichies`)
+    }
+    if (i + CARD_BATCH < cards.length) await sleep(DELAY)
+  }
+
+  console.log(`\n     ${enriched} enrichies, ${failed} échecs\n`)
+
+  // ── Step 4: write ────────────────────────────────────────────────────────────
+  console.log('4/4  Écriture de catalog.json…')
   mkdirSync(dirname(OUT), { recursive: true })
   const json = JSON.stringify({ sets, cards })
   writeFileSync(OUT, json)

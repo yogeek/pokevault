@@ -20,7 +20,9 @@ export function CollectionPage() {
   const [view, setView] = useState<ViewMode>('grid')
   const [filterSet, setFilterSet] = useState('')
   const [filterCondition, setFilterCondition] = useState<Condition | ''>('')
+  const [filterSupertype, setFilterSupertype] = useState('')
   const [sort, setSort] = useState<SortKey>('date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
   const [showAddSheet, setShowAddSheet] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -91,43 +93,64 @@ export function CollectionPage() {
       )
     }
 
-    // Sort
+    if (filterSupertype) {
+      cardIds = cardIds.filter(id => cardById.get(id)?.supertype === filterSupertype)
+    }
+
+    // Sort — raw comparison always in ascending order, direction applied after
+    const dir = sortDir === 'asc' ? 1 : -1
     return cardIds.sort((a, b) => {
       switch (sort) {
         case 'name': {
           const ca = cardById.get(a), cb = cardById.get(b)
-          const na = (ca ? (ca.nameFr ?? ca.name) : a)
-          const nb = (cb ? (cb.nameFr ?? cb.name) : b)
-          return na.localeCompare(nb, 'fr')
+          const na = ca ? (ca.nameFr ?? ca.name) : a
+          const nb = cb ? (cb.nameFr ?? cb.name) : b
+          return na.localeCompare(nb, 'fr') * dir
         }
         case 'set': {
           const sa = cardById.get(a)?.setName ?? a
           const sb = cardById.get(b)?.setName ?? b
-          return sa.localeCompare(sb, 'fr')
+          return sa.localeCompare(sb, 'fr') * dir
         }
         case 'qty': {
           const qa = grouped[a].reduce((s, e) => s + e.qty, 0)
           const qb = grouped[b].reduce((s, e) => s + e.qty, 0)
-          return qb - qa
+          return (qa - qb) * dir
         }
         case 'hp': {
           const ha = cardById.get(a)?.hp ?? 0
           const hb = cardById.get(b)?.hp ?? 0
-          return hb - ha
+          return (ha - hb) * dir
         }
         case 'date':
-        default:
-          return 0 // already sorted by addedAt DESC from DB
+        default: {
+          // inventory is pre-sorted by addedAt DESC from DB
+          // The natural order of cardIds already reflects that; compare the
+          // most-recent addedAt of each card's entries to support direction toggle.
+          const da = grouped[a][0]?.addedAt ?? ''
+          const db2 = grouped[b][0]?.addedAt ?? ''
+          return da < db2 ? dir : da > db2 ? -dir : 0
+        }
       }
     })
-  }, [grouped, search, filterSet, filterCondition, sort, cardById])
+  }, [grouped, search, filterSet, filterCondition, filterSupertype, sort, sortDir, cardById])
 
   const totalCards = useMemo(
     () => inventory?.reduce((s, e) => s + e.qty, 0) ?? 0,
     [inventory],
   )
 
-  const hasActiveFilters = !!filterSet || !!filterCondition || !!search
+  const hasActiveFilters = !!filterSet || !!filterCondition || !!filterSupertype || !!search
+
+  // Distinct supertypes present in the collection
+  const collectionSupertypes = useMemo(() => {
+    const types = new Set<string>()
+    for (const id of Object.keys(grouped)) {
+      const st = cardById.get(id)?.supertype
+      if (st) types.add(st)
+    }
+    return [...types].sort()
+  }, [grouped, cardById])
 
   const toggleSelect = useCallback((cardId: string) => {
     setSelectedIds(prev => {
@@ -254,22 +277,61 @@ export function CollectionPage() {
                 ))}
               </select>
             </div>
+
+            {/* Supertype filter chips */}
+            {collectionSupertypes.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                <button
+                  onClick={() => setFilterSupertype('')}
+                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
+                    ${!filterSupertype
+                      ? 'border-brand-500 bg-brand-500/10 text-brand-400'
+                      : 'border-slate-700 text-slate-400'}`}
+                >
+                  Tous
+                </button>
+                {collectionSupertypes.map(st => (
+                  <button
+                    key={st}
+                    onClick={() => setFilterSupertype(filterSupertype === st ? '' : st)}
+                    className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
+                      ${filterSupertype === st
+                        ? 'border-brand-500 bg-brand-500/10 text-brand-400'
+                        : 'border-slate-700 text-slate-400'}`}
+                  >
+                    {st === 'Pokémon' ? '🃏 Pokémon' : st === 'Trainer' ? '🧑‍💼 Dresseur' : '⚡ Énergie'}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Sort row with direction toggle */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
               {(['date','name','set','qty','hp'] as SortKey[]).map(k => (
                 <button
                   key={k}
-                  onClick={() => setSort(k)}
-                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors capitalize
+                  onClick={() => {
+                    if (sort === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                    else { setSort(k); setSortDir(k === 'date' || k === 'qty' || k === 'hp' ? 'desc' : 'asc') }
+                  }}
+                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
+                    flex items-center gap-1
                     ${sort === k
                       ? 'border-brand-500 bg-brand-500/10 text-brand-400'
                       : 'border-slate-700 text-slate-400'}`}
                 >
                   {k === 'date' ? 'Récents' : k === 'qty' ? 'Quantité' : k === 'name' ? 'Nom' : k === 'hp' ? 'PV' : 'Set'}
+                  {sort === k && (
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round"
+                        d={sortDir === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'} />
+                    </svg>
+                  )}
                 </button>
               ))}
               {hasActiveFilters && (
                 <button
-                  onClick={() => { setFilterSet(''); setFilterCondition(''); setSearch('') }}
+                  onClick={() => { setFilterSet(''); setFilterCondition(''); setFilterSupertype(''); setSearch('') }}
                   className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-red-700
                              text-red-400 bg-red-500/10"
                 >
