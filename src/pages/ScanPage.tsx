@@ -120,6 +120,7 @@ export function ScanPage() {
   // detections where a retry returned no new proposals
   const [retryNoResult, setRetryNoResult] = useState<Set<number>>(new Set())
   const [addedCount, setAddedCount] = useState(0)
+  const [adding, setAdding] = useState(false)
   const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
@@ -483,36 +484,41 @@ export function ScanPage() {
   }, [pageResult, pageSelected, scanType, preview])
 
   const addSelectedToCollection = useCallback(async () => {
-    const toAdd = pageResult
-      .map(d => d[0]?.card)
-      .filter((c): c is CatalogCard => !!c && pageSelected.has(c.id))
-    await Promise.all(toAdd.map(card =>
-      db.inventory.add({
-        cardId: card.id,
-        condition: 'NM' as const,
-        language: 'FR' as const,
-        variant: 'normal' as const,
-        qty: 1,
-        addedAt: new Date().toISOString(),
+    if (adding) return
+    setAdding(true)
+    try {
+      const toAdd = pageResult
+        .map(d => d[0]?.card)
+        .filter((c): c is CatalogCard => !!c && pageSelected.has(c.id))
+      await Promise.all(toAdd.map(card =>
+        db.inventory.add({
+          cardId: card.id,
+          condition: 'NM' as const,
+          language: 'FR' as const,
+          variant: 'normal' as const,
+          qty: 1,
+          addedAt: new Date().toISOString(),
+        })
+      ))
+      const addedIds = new Set(toAdd.map(c => c.id))
+      const remaining = pageResult.filter(d => {
+        const id = d[0]?.card.id
+        return id ? !addedIds.has(id) : false
       })
-    ))
-    const addedIds = new Set(toAdd.map(c => c.id))
-    const remaining = pageResult.filter(d => {
-      const id = d[0]?.card.id
-      return id ? !addedIds.has(id) : false
-    })
-    setPageResult(remaining)
-    setPageSelected(new Set())
-    setCandidateSheet(null)
-    setAddedCount(prev => prev + toAdd.length)
-    // If nothing is left, wipe the saved state so revisiting the tab shows idle
-    if (remaining.length === 0) {
-      clearScan()
-    } else {
-      saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview, pageSelected: [] })
+      setPageResult(remaining)
+      setPageSelected(new Set())
+      setCandidateSheet(null)
+      setAddedCount(prev => prev + toAdd.length)
+      if (remaining.length === 0) {
+        clearScan()
+      } else {
+        saveScan({ mode: 'page-result', scanType, result: [], pageResult: remaining, preview, pageSelected: [] })
+      }
+      setCelebrationCards(toAdd)
+    } finally {
+      setAdding(false)
     }
-    setCelebrationCards(toAdd)
-  }, [pageResult, pageSelected, scanType, preview])
+  }, [adding, pageResult, pageSelected, scanType, preview])
 
   const aiLoading = aiKey === undefined
   const aiConfigured = !!aiKey
@@ -972,9 +978,16 @@ export function ScanPage() {
 
           <div className="space-y-2 pt-1">
             {pageSelected.size > 0 && (
-              <button onClick={addSelectedToCollection}
-                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold">
-                Ajouter {pageSelected.size} carte{pageSelected.size > 1 ? 's' : ''} à la collection
+              <button
+                onClick={addSelectedToCollection}
+                disabled={adding}
+                className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold
+                           disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {adding && <Spinner />}
+                {adding
+                  ? 'Ajout en cours…'
+                  : `Ajouter ${pageSelected.size} carte${pageSelected.size > 1 ? 's' : ''} à la collection`}
               </button>
             )}
             {preview && (
