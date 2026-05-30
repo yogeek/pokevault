@@ -88,19 +88,26 @@ async function main() {
         const supertype = category === 'Trainer' ? 'Trainer'
           : category === 'Energy' ? 'Energy'
           : 'Pokémon'
-        cards.push({
-          id:        `${sr.id}-${card.localId}`,
-          name:      enCard?.name ?? card.name,
-          nameFr:    card.name,
-          setId:     sr.id,
-          setName:   enSetName,
-          setNameFr: frSet.name,
-          number:    card.localId,
-          total:     frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
-          rarity:    enCard?.rarity ?? card.rarity ?? '',
-          imageUrl:  imageBase ? `${imageBase}/high.webp` : '',
+        const entry = {
+          id:          `${sr.id}-${card.localId}`,
+          name:        enCard?.name ?? card.name,
+          nameFr:      card.name,
+          setId:       sr.id,
+          setName:     enSetName,
+          setNameFr:   frSet.name,
+          number:      card.localId,
+          total:       frSet.cardCount?.official ?? frSet.cardCount?.total ?? 0,
+          rarity:      enCard?.rarity ?? card.rarity ?? '',
+          imageUrl:    imageBase ? `${imageBase}/high.webp` : '',
           supertype,
-        })
+        }
+        // hp and evolveFrom may be present in the full API response
+        // even when the TypeScript CardResume type doesn't declare them
+        const hp = enCard?.hp ?? card.hp
+        if (hp != null) entry.hp = hp
+        const ef = enCard?.evolveFrom ?? card.evolveFrom
+        if (ef) entry.evolveFrom = ef
+        cards.push(entry)
       }
     }
 

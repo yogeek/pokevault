@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { useExportReminder } from '@/hooks/useExportReminder'
 import type { Condition } from '@/types'
 
-type SortKey = 'date' | 'name' | 'set' | 'qty'
+type SortKey = 'date' | 'name' | 'set' | 'qty' | 'hp'
 type ViewMode = 'grid' | 'list'
 
 export function CollectionPage() {
@@ -56,6 +56,12 @@ export function CollectionPage() {
     return catalog?.sets.filter(s => setIds.has(s.id)) ?? []
   }, [grouped, catalog])
 
+  // Pre-build a lookup map so sort comparisons are O(1) instead of O(n)
+  const cardById = useMemo(() => {
+    if (!catalog) return new Map<string, NonNullable<typeof catalog>['cards'][0]>()
+    return new Map(catalog.cards.map(c => [c.id, c]))
+  }, [catalog])
+
   // Apply search + filters + sort
   const displayedCards = useMemo(() => {
     let cardIds = Object.keys(grouped)
@@ -63,7 +69,7 @@ export function CollectionPage() {
     if (search) {
       const q = search.toLowerCase()
       cardIds = cardIds.filter(id => {
-        const card = catalog?.cards.find(c => c.id === id)
+        const card = cardById.get(id)
         return (
           id.toLowerCase().includes(q) ||
           card?.name.toLowerCase().includes(q) ||
@@ -75,10 +81,7 @@ export function CollectionPage() {
     }
 
     if (filterSet) {
-      cardIds = cardIds.filter(id => {
-        const card = catalog?.cards.find(c => c.id === id)
-        return card?.setId === filterSet
-      })
+      cardIds = cardIds.filter(id => cardById.get(id)?.setId === filterSet)
     }
 
     if (filterCondition) {
@@ -91,13 +94,14 @@ export function CollectionPage() {
     return cardIds.sort((a, b) => {
       switch (sort) {
         case 'name': {
-          const na = catalog?.cards.find(c => c.id === a)?.name ?? a
-          const nb = catalog?.cards.find(c => c.id === b)?.name ?? b
+          const ca = cardById.get(a), cb = cardById.get(b)
+          const na = (ca ? (ca.nameFr ?? ca.name) : a)
+          const nb = (cb ? (cb.nameFr ?? cb.name) : b)
           return na.localeCompare(nb, 'fr')
         }
         case 'set': {
-          const sa = catalog?.cards.find(c => c.id === a)?.setName ?? a
-          const sb = catalog?.cards.find(c => c.id === b)?.setName ?? b
+          const sa = cardById.get(a)?.setName ?? a
+          const sb = cardById.get(b)?.setName ?? b
           return sa.localeCompare(sb, 'fr')
         }
         case 'qty': {
@@ -105,12 +109,17 @@ export function CollectionPage() {
           const qb = grouped[b].reduce((s, e) => s + e.qty, 0)
           return qb - qa
         }
+        case 'hp': {
+          const ha = cardById.get(a)?.hp ?? 0
+          const hb = cardById.get(b)?.hp ?? 0
+          return hb - ha
+        }
         case 'date':
         default:
           return 0 // already sorted by addedAt DESC from DB
       }
     })
-  }, [grouped, search, filterSet, filterCondition, sort, catalog])
+  }, [grouped, search, filterSet, filterCondition, sort, cardById])
 
   const totalCards = useMemo(
     () => inventory?.reduce((s, e) => s + e.qty, 0) ?? 0,
@@ -245,7 +254,7 @@ export function CollectionPage() {
               </select>
             </div>
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {(['date','name','set','qty'] as SortKey[]).map(k => (
+              {(['date','name','set','qty','hp'] as SortKey[]).map(k => (
                 <button
                   key={k}
                   onClick={() => setSort(k)}
@@ -254,7 +263,7 @@ export function CollectionPage() {
                       ? 'border-brand-500 bg-brand-500/10 text-brand-400'
                       : 'border-slate-700 text-slate-400'}`}
                 >
-                  {k === 'date' ? 'Récents' : k === 'qty' ? 'Quantité' : k === 'name' ? 'Nom' : 'Set'}
+                  {k === 'date' ? 'Récents' : k === 'qty' ? 'Quantité' : k === 'name' ? 'Nom' : k === 'hp' ? 'PV' : 'Set'}
                 </button>
               ))}
               {hasActiveFilters && (

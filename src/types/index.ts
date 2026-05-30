@@ -16,6 +16,8 @@ export interface CatalogCard {
   rarity: Rarity
   imageUrl: string   // TCGdex CDN URL
   supertype: string  // Pokémon | Trainer | Energy
+  hp?: number        // Pokémon HP (null for Trainers/Energy)
+  evolveFrom?: string // Name of the Pokémon this evolves from (EN)
 }
 
 export interface CatalogSet {

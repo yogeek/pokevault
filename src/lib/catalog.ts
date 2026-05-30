@@ -79,3 +79,41 @@ export function cardName(card: { name: string; nameFr?: string }): string {
 export function cardSetName(card: { setName: string; setNameFr?: string }): string {
   return card.setNameFr ?? card.setName
 }
+
+/** All unique EN names that directly evolve FROM a given EN name (immediate next evolutions). */
+export function nextEvolutionNames(catalog: CatalogData, fromName: string): string[] {
+  const names = new Set<string>()
+  for (const c of catalog.cards) {
+    if (c.evolveFrom === fromName) names.add(c.name)
+  }
+  return [...names]
+}
+
+/**
+ * Build the full linear evolution chain for a card.
+ * Returns an array of EN names from base to final form,
+ * e.g. ["Charmander", "Charmeleon", "Charizard"].
+ * Falls back to just the card's own name when evolveFrom data is absent.
+ */
+export function evolutionChain(catalog: CatalogData, card: { name: string; evolveFrom?: string }): string[] {
+  // Walk backwards to find the base
+  const chain: string[] = [card.name]
+  let current = card.evolveFrom
+  const seen = new Set<string>([card.name])
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    chain.unshift(current)
+    // Find any card with that name to get its evolveFrom
+    current = catalog.cards.find(c => c.name === current)?.evolveFrom
+  }
+  // Walk forward from the last element to add further evolutions
+  let tip = chain[chain.length - 1]
+  while (true) {
+    const nexts = nextEvolutionNames(catalog, tip)
+    if (nexts.length !== 1 || seen.has(nexts[0])) break
+    seen.add(nexts[0])
+    chain.push(nexts[0])
+    tip = nexts[0]
+  }
+  return chain
+}

@@ -5,13 +5,14 @@ import { db } from '@/db'
 import { deleteEntry, updateEntry } from '@/db/inventory'
 import { addToWishlist, removeFromWishlist } from '@/db/wishlist'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName, cardSetName } from '@/lib/catalog'
+import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
 import { ConditionBadge, PriorityBadge } from '@/components/ui/Badge'
 import { Toast } from '@/components/ui/Toast'
 import type { Condition, InventoryEntry, WishlistEntry, WishlistPriority } from '@/types'
 
 export function CardDetailPage() {
   const { cardId } = useParams<{ cardId: string }>()
+  const navigate = useNavigate()
   const catalog = useCatalogStore(s => s.catalog)
 
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -115,10 +116,50 @@ export function CardDetailPage() {
           )}
         </div>
         <p className="text-sm text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
-        <div className="flex gap-2 mt-1">
+        <div className="flex flex-wrap gap-2 mt-1">
           <span className="text-xs bg-slate-800 px-2 py-0.5 rounded">{card.rarity}</span>
           <span className="text-xs bg-slate-800 px-2 py-0.5 rounded">{card.supertype}</span>
+          {card.hp != null && (
+            <span className="text-xs bg-red-900/40 text-red-300 border border-red-800/40 px-2 py-0.5 rounded font-semibold">
+              {card.hp} PV
+            </span>
+          )}
         </div>
+
+        {/* Evolution chain — only for Pokémon with evolveFrom data */}
+        {card.supertype === 'Pokémon' && catalog && (() => {
+          const chain = evolutionChain(catalog, card)
+          if (chain.length <= 1) return null
+          return (
+            <div className="mt-3 pt-3 border-t border-slate-800">
+              <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Lignée évolutive</p>
+              <div className="flex items-center gap-1 flex-wrap">
+                {chain.map((name, i) => {
+                  const frCard = catalog.cards.find(c => c.name === name)
+                  const displayName = frCard ? (frCard.nameFr ?? frCard.name) : name
+                  const isCurrentCard = name === card.name
+                  return (
+                    <span key={name} className="flex items-center gap-1">
+                      {i > 0 && <span className="text-slate-600 text-xs">→</span>}
+                      <button
+                        onClick={() => navigate(`/add?q=${encodeURIComponent(name)}`)}
+                        className={`text-sm px-2 py-0.5 rounded-full transition-colors
+                          ${isCurrentCard
+                            ? 'bg-brand-500/20 text-brand-300 font-semibold'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                      >
+                        {displayName}
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-slate-600 mt-1.5">
+                Appuyez sur un nom pour voir toutes les cartes de ce Pokémon
+              </p>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Wishlist priority picker */}
