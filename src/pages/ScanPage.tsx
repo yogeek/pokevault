@@ -589,12 +589,25 @@ export function ScanPage() {
                             ? 'bg-brand-500/15 border border-brand-500/40'
                             : 'bg-slate-800 border border-transparent hover:border-slate-600'}`}
                       >
-                        <img
-                          src={sc.card.imageUrl}
-                          alt={cardName(sc.card)}
-                          className="w-10 h-14 object-cover rounded flex-shrink-0"
-                          onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                        />
+                        <span className="relative flex-shrink-0 group">
+                          <img
+                            src={sc.card.imageUrl}
+                            alt={cardName(sc.card)}
+                            className="w-10 h-14 object-cover rounded"
+                            onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                            onClick={e => { e.stopPropagation(); setLightbox({ src: sc.card.imageUrl, alt: cardName(sc.card) }) }}
+                          />
+                          <span
+                            className="absolute inset-0 flex items-center justify-center rounded
+                                       bg-black/0 group-active:bg-black/30 transition-colors pointer-events-none"
+                          >
+                            <svg className="w-4 h-4 text-white opacity-0 group-active:opacity-100 transition-opacity drop-shadow"
+                              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round"
+                                d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0zm-3-2v4m-2-2h4" />
+                            </svg>
+                          </span>
+                        </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{cardName(sc.card)}</p>
                           <p className="text-xs text-slate-400">
