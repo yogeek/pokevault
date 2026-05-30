@@ -187,14 +187,14 @@ export function CollectionPage() {
     return evolutionChain(catalog, evolutionSheet)
   }, [evolutionSheet, catalog])
 
-  // Set of Pokémon (EN) names the user already has in collection
-  const ownedNames = useMemo(() => {
-    const names = new Set<string>()
+  // Map EN name → first owned cardId (to navigate directly to the right card)
+  const ownedIdByName = useMemo(() => {
+    const map = new Map<string, string>()
     for (const id of Object.keys(grouped)) {
       const n = cardById.get(id)?.name
-      if (n) names.add(n)
+      if (n && !map.has(n)) map.set(n, id)
     }
-    return names
+    return map
   }, [grouped, cardById])
 
   return (
@@ -222,8 +222,10 @@ export function CollectionPage() {
                   {evoChain.map((engName, i) => {
                     const sample = catalog.cards.find(c => c.name === engName)
                     const displayName = sample ? (sample.nameFr ?? sample.name) : engName
-                    const owned = ownedNames.has(engName)
+                    const ownedId = ownedIdByName.get(engName)
+                    const owned = ownedId != null
                     const isCurrent = engName === evolutionSheet.name
+                    const targetId = ownedId ?? sample?.id
                     return (
                       <div key={engName} className="flex items-center gap-3">
                         {i > 0 && (
@@ -232,7 +234,8 @@ export function CollectionPage() {
                           </svg>
                         )}
                         <button
-                          onClick={() => { setEvolutionSheet(null); navigate(`/add?q=${encodeURIComponent(engName)}`) }}
+                          onClick={() => { if (targetId) { setEvolutionSheet(null); navigate(`/card/${targetId}`) } }}
+                          disabled={!targetId}
                           className={`flex-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors
                             ${isCurrent
                               ? 'bg-brand-500/15 border border-brand-500/40'
