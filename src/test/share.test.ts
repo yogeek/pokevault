@@ -72,6 +72,23 @@ describe('encryptApiKey / decryptApiKey round-trip', () => {
     expect(decKey).not.toContain('=')
   })
 
+  it('full URL path round-trips a 108-char key with a populated snapshot', async () => {
+    const snap: ShareSnapshot = {
+      v: 1, n: 'Alice', g: '2026-05-14T12:00:00Z',
+      i: Array.from({ length: 50 }, (_, k) => [`base1-${k}`, 'NM', 1] as [string, 'NM', number]),
+      w: [['base1-58', 1]],
+    }
+    const realKey = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8'.repeat(6) + '-_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AA'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).window = { location: { origin: 'https://example.com' } }
+    const url = await getShareUrlWithKey(snap, realKey)
+    const fragment = url.split('#')[1]
+    const tildeIdx = fragment.lastIndexOf('~')
+    const decoded = decodeSnapshot(fragment.slice(0, tildeIdx))
+    const recovered = await decryptApiKey(decoded.ak!, fragment.slice(tildeIdx + 1))
+    expect(recovered).toBe(realKey)
+  })
+
   it('URL with key can be split and decoded', async () => {
     const snap: ShareSnapshot = { v: 1, n: 'Alice', g: '2026-05-14T12:00:00Z', i: [], w: [] }
     const fakeKey = 'sk-ant-api03-real-key-xyz'

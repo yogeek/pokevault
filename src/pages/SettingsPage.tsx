@@ -230,10 +230,12 @@ export function SettingsPage() {
   // ─── AI settings ─────────────────────────────────────────────────────────
 
   async function saveAIKey() {
+    const cleanKey = aiKey.trim()
     await setSetting('aiProvider', aiProvider)
-    await setSetting('aiApiKeyEnc', aiKey)
+    await setSetting('aiApiKeyEnc', cleanKey)
     await setSetting('aiModel', aiModel)
     await setSetting('aiEnabled', true)
+    setAiKey(cleanKey)
     setAiSaved(true)
     setTimeout(() => setAiSaved(false), 2000)
   }

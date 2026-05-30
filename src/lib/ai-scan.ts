@@ -111,13 +111,17 @@ async function fetchCardNameFromClaude(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
 
+  // Trim any stray whitespace/newline pasted with the key: a header value like
+  // "sk-ant-...\n" is rejected by the API as "invalid x-api-key".
+  const cleanKey = apiKey.trim()
+
   let res: Response
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        'x-api-key': apiKey,
+        'x-api-key': cleanKey,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
         'content-type': 'application/json',
@@ -189,6 +193,7 @@ export async function recognizePageWithClaude(
   const imageData = toJpegBase64(canvas, MAX_DIM_PAGE)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60_000)
+  const cleanKey = apiKey.trim()
 
   let res: Response
   try {
@@ -196,7 +201,7 @@ export async function recognizePageWithClaude(
       method: 'POST',
       signal: controller.signal,
       headers: {
-        'x-api-key': apiKey,
+        'x-api-key': cleanKey,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
         'content-type': 'application/json',
