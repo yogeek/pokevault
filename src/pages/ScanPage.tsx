@@ -459,11 +459,12 @@ export function ScanPage() {
         <>
           <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setCandidateSheet(null)} />
           <div className="fixed bottom-0 inset-x-0 z-50 bg-slate-900 rounded-t-3xl border-t border-slate-800
-                          pb-[env(safe-area-inset-bottom)] max-w-lg mx-auto">
-            <div className="flex justify-center pt-3 pb-1">
+                          pb-[env(safe-area-inset-bottom)] max-w-lg mx-auto
+                          max-h-[88vh] flex flex-col">
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
               <div className="w-10 h-1 rounded-full bg-slate-700" />
             </div>
-            <div className="px-4 pt-1 pb-6">
+            <div className="px-4 pt-1 pb-6 overflow-y-auto flex-1">
               <h3 className="text-sm font-semibold text-slate-300 mb-1">Propositions alternatives</h3>
 
               {/* Warn when top confidence is low */}
@@ -495,7 +496,7 @@ export function ScanPage() {
                 )}
               </div>
 
-              <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+              <div className="space-y-2">
                 {(() => {
                   const items = sheetSearchQuery.trim() ? sheetSearchResults : pageResult[candidateSheet]
                   if (sheetSearchQuery.trim() && items.length === 0) {
