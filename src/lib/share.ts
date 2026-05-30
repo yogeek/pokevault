@@ -37,7 +37,9 @@ export function buildSnapshot(
 
 export function getShareUrl(snapshot: ShareSnapshot): string {
   const encoded = encodeSnapshot(snapshot)
-  const base = typeof window !== 'undefined' ? window.location.origin : ''
+  const base = typeof window !== 'undefined'
+    ? window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '')
+    : ''
   return `${base}/view#${encoded}`
 }
 
