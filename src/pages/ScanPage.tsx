@@ -27,7 +27,7 @@ interface PersistedScan {
 
 function loadScan(): PersistedScan | null {
   try {
-    const data = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? 'null') as PersistedScan | null
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as PersistedScan | null
     if (!data) return null
     // Backward compat: old format had pageResult as CatalogCard[] (flat array of objects)
     if (data.pageResult?.length > 0 && !Array.isArray(data.pageResult[0])) {
@@ -42,10 +42,48 @@ function loadScan(): PersistedScan | null {
 }
 
 function saveScan(s: PersistedScan) {
-  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s)) } catch { /* quota */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) } catch { /* quota */ }
 }
 
-function clearScan() { sessionStorage.removeItem(STORAGE_KEY) }
+function clearScan() { localStorage.removeItem(STORAGE_KEY) }
+
+const HISTORY_KEY = 'pokevault_scan_history'
+const HISTORY_MAX = 5
+
+interface ScanHistoryEntry {
+  id: string
+  at: string
+  scanType: ScanType
+  result: CatalogCard[]
+  pageResult: ScoredCard[][]
+  pageSelected: string[]
+}
+
+function loadHistory(): ScanHistoryEntry[] {
+  try {
+    const data = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as ScanHistoryEntry[]
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+
+function pushHistory(entry: ScanHistoryEntry) {
+  try {
+    const prev = loadHistory().filter(e => e.id !== entry.id)
+    const next = [entry, ...prev].slice(0, HISTORY_MAX)
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+  } catch { /* quota */ }
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "À l'instant"
+  if (mins < 60) return `Il y a ${mins} min`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `Il y a ${hours} h`
+  const days = Math.floor(hours / 24)
+  return `Il y a ${days} j`
+}
 
 function scoreColor(score: number) {
   if (score === 0)  return { badge: 'bg-slate-600/40 text-slate-400', dot: 'bg-slate-400' }
@@ -88,6 +126,7 @@ export function ScanPage() {
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
+  const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory)
 
   useEffect(() => {
     const reload = () => {
@@ -180,6 +219,11 @@ export function ScanPage() {
       setResult(cards)
       setMode('result')
       saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview: currentPreview })
+      if (cards.length > 0) {
+        const entry: ScanHistoryEntry = { id: crypto.randomUUID(), at: new Date().toISOString(), scanType, result: cards, pageResult: [], pageSelected: [] }
+        pushHistory(entry)
+        setHistory(loadHistory())
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -199,6 +243,11 @@ export function ScanPage() {
       setAddedCount(0)
       setMode('page-result')
       saveScan({ mode: 'page-result', scanType, result: [], pageResult: detections, preview: currentPreview, pageSelected: allSelected })
+      if (detections.length > 0) {
+        const entry: ScanHistoryEntry = { id: crypto.randomUUID(), at: new Date().toISOString(), scanType, result: [], pageResult: detections, pageSelected: allSelected }
+        pushHistory(entry)
+        setHistory(loadHistory())
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setMode('error')
@@ -377,6 +426,29 @@ export function ScanPage() {
     }
     img.src = preview
   }, [preview, catalog, scanType, runRecognition, runPageRecognition])
+
+  const loadHistoryEntry = useCallback((entry: ScanHistoryEntry) => {
+    setResult(entry.result)
+    setPageResult(entry.pageResult)
+    setPageSelected(new Set(entry.pageSelected))
+    setScanType(entry.scanType)
+    setPreview(null)
+    setAddedCount(0)
+    setRetryCtx(null)
+    setRetryNoResult(new Set())
+    setError('')
+    setCandidateSheet(null)
+    setLightbox(null)
+    setMode(entry.scanType === 'page' ? 'page-result' : 'result')
+    saveScan({
+      mode: entry.scanType === 'page' ? 'page-result' : 'result',
+      scanType: entry.scanType,
+      result: entry.result,
+      pageResult: entry.pageResult,
+      preview: null,
+      pageSelected: entry.pageSelected,
+    })
+  }, [])
 
   const toggleCard = useCallback((id: string) => {
     const next = new Set(pageSelected)
@@ -665,6 +737,62 @@ export function ScanPage() {
                 </button>
               </div>
             </>
+          )}
+
+          {history.length > 0 && (
+            <div className="w-full">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Scans récents</h2>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem(HISTORY_KEY)
+                    setHistory([])
+                  }}
+                  className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+                >
+                  Effacer
+                </button>
+              </div>
+              <div className="space-y-2">
+                {history.map(entry => {
+                  const cards = entry.scanType === 'page'
+                    ? entry.pageResult.map(d => d[0]?.card).filter(Boolean)
+                    : entry.result
+                  const previewCards = cards.slice(0, 4)
+                  const label = entry.scanType === 'page'
+                    ? `${cards.length} carte${cards.length > 1 ? 's' : ''} · Page`
+                    : `${cards.length} résultat${cards.length > 1 ? 's' : ''} · Carte`
+                  return (
+                    <button
+                      key={entry.id}
+                      onClick={() => loadHistoryEntry(entry)}
+                      className="w-full flex items-center gap-3 bg-slate-800/60 rounded-xl p-3 text-left
+                                 border border-slate-700/50 hover:border-brand-500/40 transition-colors active:scale-[0.99]"
+                    >
+                      <div className="flex -space-x-2 flex-shrink-0">
+                        {previewCards.map((card, i) => (
+                          <img
+                            key={card!.id}
+                            src={card!.imageUrl}
+                            alt={cardName(card!)}
+                            className="w-8 h-11 rounded object-cover border border-slate-900"
+                            style={{ zIndex: previewCards.length - i }}
+                            onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-200 truncate">{label}</p>
+                        <p className="text-xs text-slate-500">{relativeTime(entry.at)}</p>
+                      </div>
+                      <svg className="w-4 h-4 text-slate-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
 
           <button onClick={() => navigate('/add')} className="text-xs text-slate-600 underline">
