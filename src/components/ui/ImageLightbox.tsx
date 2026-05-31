@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { cardImgError } from '@/lib/imageError'
 
 interface Item { src: string; alt: string }
 
@@ -67,6 +68,7 @@ export function ImageLightbox({ items, startIndex = 0, onClose }: Props) {
         alt={alt}
         className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
         onClick={e => e.stopPropagation()}
+        onError={cardImgError}
       />
 
       {/* Prev arrow */}
