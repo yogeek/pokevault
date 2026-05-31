@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ImageLightbox } from './ImageLightbox'
+import { cardImgError } from '@/lib/imageError'
 
 interface Item { src: string; alt: string }
 
@@ -27,7 +28,7 @@ export function CardImage({ src, alt, className, list, listIndex = 0 }: Props) {
           alt={alt}
           className={`${className ?? ''} cursor-zoom-in`}
           onClick={e => { e.stopPropagation(); e.preventDefault(); setOpen(true) }}
-          onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+          onError={cardImgError}
         />
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center
                          rounded bg-black/0 group-active:bg-black/25 transition-colors">

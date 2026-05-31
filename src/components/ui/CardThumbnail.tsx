@@ -1,5 +1,6 @@
 import type { CatalogCard } from '@/types'
 import { cardName } from '@/lib/catalog'
+import { cardImgError } from '@/lib/imageError'
 
 interface Props {
   card: CatalogCard
@@ -23,7 +24,7 @@ export function CardThumbnail({ card, qty, className = '', onClick }: Props) {
         alt={cardName(card)}
         loading="lazy"
         className="w-full object-cover aspect-[2.5/3.5]"
-        onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+        onError={cardImgError}
       />
       {qty != null && qty > 1 && (
         <span className="absolute bottom-1 right-1 bg-slate-900/80 text-white text-xs

@@ -63,6 +63,8 @@ function fillMissingImageUrls(catalog: CatalogData): void {
       if (slug) {
         card.imageUrl = `https://assets.tcgdex.net/fr/${slug}/${card.setId}/${card.number}/high.webp`
       }
+    } else if (card.imageUrl.includes('assets.tcgdex.net/en/')) {
+      card.imageUrl = card.imageUrl.replace('assets.tcgdex.net/en/', 'assets.tcgdex.net/fr/')
     }
   }
 }
