@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState, useMemo, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '@/db'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
@@ -16,15 +16,53 @@ type ViewMode = 'grid' | 'list'
 
 export function CollectionPage() {
   const navigate = useNavigate()
-  const [search, setSearch] = useState('')
+
+  // ── Filters/sort in URL so back-navigation restores them ──────────────────
+  const [searchParams, setSearchParams] = useSearchParams()
+  const search          = searchParams.get('q')    ?? ''
+  const filterSet       = searchParams.get('set')  ?? ''
+  const filterCondition = (searchParams.get('cond') ?? '') as Condition | ''
+  const filterSupertype = searchParams.get('type') ?? ''
+  const sort            = (searchParams.get('sort') ?? 'date') as SortKey
+  const sortDir         = (searchParams.get('dir')  ?? 'desc') as 'asc' | 'desc'
+
+  const updateParam = (key: string, value: string) =>
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value); else next.delete(key)
+      return next
+    }, { replace: true })
+
+  const setSearch          = (v: string) => updateParam('q',    v)
+  const setFilterSet       = (v: string) => updateParam('set',  v)
+  const setFilterCondition = (v: string) => updateParam('cond', v)
+  const setFilterSupertype = (v: string) => updateParam('type', v)
+  const clearFilters = () =>
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('q'); next.delete('set'); next.delete('cond'); next.delete('type')
+      return next
+    }, { replace: true })
+  const handleSortClick = (k: SortKey) =>
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      const cur  = (prev.get('sort') ?? 'date') as SortKey
+      const dir  = (prev.get('dir')  ?? 'desc') as 'asc' | 'desc'
+      if (cur === k) {
+        const nd = dir === 'asc' ? 'desc' : 'asc'
+        if (nd === 'desc') next.delete('dir'); else next.set('dir', nd)
+      } else {
+        if (k === 'date') next.delete('sort'); else next.set('sort', k)
+        const nd = (k === 'date' || k === 'qty' || k === 'hp') ? 'desc' : 'asc'
+        if (nd === 'desc') next.delete('dir'); else next.set('dir', nd)
+      }
+      return next
+    }, { replace: true })
+  // ─────────────────────────────────────────────────────────────────────────
+
   const [view, setView] = useState<ViewMode>(() =>
     (localStorage.getItem('pokevault_view') as ViewMode | null) ?? 'grid'
   )
-  const [filterSet, setFilterSet] = useState('')
-  const [filterCondition, setFilterCondition] = useState<Condition | ''>('')
-  const [filterSupertype, setFilterSupertype] = useState('')
-  const [sort, setSort] = useState<SortKey>('date')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
   const [showAddSheet, setShowAddSheet] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -32,6 +70,35 @@ export function CollectionPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [evolutionSheet, setEvolutionSheet] = useState<CatalogCard | null>(null)
+
+  // Back-button sentinel: close evolution sheet or exit select mode instead of leaving the page
+  const sentinelPushed = useRef(false)
+  const ignoreNextPop  = useRef(false)
+  useEffect(() => {
+    const isOpen = evolutionSheet !== null || selectMode
+    if (isOpen && !sentinelPushed.current) {
+      window.history.pushState({ _collectionOverlay: true }, '')
+      sentinelPushed.current = true
+    } else if (!isOpen && sentinelPushed.current) {
+      sentinelPushed.current = false
+      ignoreNextPop.current  = true
+      window.history.go(-1)
+    }
+  }, [evolutionSheet, selectMode])
+  useEffect(() => {
+    const onPop = () => {
+      if (ignoreNextPop.current) { ignoreNextPop.current = false; return }
+      if (sentinelPushed.current) {
+        sentinelPushed.current = false
+        setEvolutionSheet(null)
+        setSelectMode(false)
+        setSelectedIds(new Set())
+        setShowDeleteConfirm(false)
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   const catalog = useCatalogStore(s => s.catalog)
   const showExportReminder = useExportReminder()
@@ -426,10 +493,7 @@ export function CollectionPage() {
               {(['date','name','set','qty','hp'] as SortKey[]).map(k => (
                 <button
                   key={k}
-                  onClick={() => {
-                    if (sort === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-                    else { setSort(k); setSortDir(k === 'date' || k === 'qty' || k === 'hp' ? 'desc' : 'asc') }
-                  }}
+                  onClick={() => handleSortClick(k)}
                   className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
                     flex items-center gap-1
                     ${sort === k
@@ -447,7 +511,7 @@ export function CollectionPage() {
               ))}
               {hasActiveFilters && (
                 <button
-                  onClick={() => { setFilterSet(''); setFilterCondition(''); setFilterSupertype(''); setSearch('') }}
+                  onClick={clearFilters}
                   className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-red-700
                              text-red-400 bg-red-500/10"
                 >
