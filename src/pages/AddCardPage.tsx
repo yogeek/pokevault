@@ -64,6 +64,8 @@ export function AddCardPage() {
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sentinelPushed = useRef(false)
+  const ignoreNextPop  = useRef(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<CatalogCard | null>(null)
   const [existingEntries, setExistingEntries] = useState<InventoryEntry[]>([])
@@ -76,6 +78,33 @@ export function AddCardPage() {
   const [celebrationCard, setCelebrationCard] = useState<CatalogCard | null>(null)
   // Duplicate confirmation: first save click sets this, second click proceeds.
   const [confirmDupe, setConfirmDupe] = useState(false)
+
+  // Back-button sentinel: when a card is selected (form open), push a dummy
+  // history entry so the Android/browser back button returns to the search view
+  // instead of leaving AddCardPage entirely.
+  useEffect(() => {
+    const isOpen = selected !== null
+    if (isOpen && !sentinelPushed.current) {
+      window.history.pushState({ _addCardForm: true }, '')
+      sentinelPushed.current = true
+    } else if (!isOpen && sentinelPushed.current) {
+      sentinelPushed.current = false
+      ignoreNextPop.current  = true
+      window.history.go(-1)
+    }
+  }, [selected])
+
+  useEffect(() => {
+    const onPop = () => {
+      if (ignoreNextPop.current) { ignoreNextPop.current = false; return }
+      if (sentinelPushed.current) {
+        sentinelPushed.current = false
+        setSelected(null)
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   // Pre-select card if coming from scan or card detail
   useEffect(() => {
