@@ -74,6 +74,8 @@ export function AddCardPage() {
   const [pricePaid, setPricePaid] = useState('')
   const [saving, setSaving] = useState(false)
   const [celebrationCard, setCelebrationCard] = useState<CatalogCard | null>(null)
+  // Duplicate confirmation: first save click sets this, second click proceeds.
+  const [confirmDupe, setConfirmDupe] = useState(false)
 
   // Pre-select card if coming from scan or card detail
   useEffect(() => {
@@ -90,6 +92,9 @@ export function AddCardPage() {
     getInventoryForCard(selected.id).then(setExistingEntries)
   }, [selected])
 
+  // Reset duplicate confirmation whenever the card or key form fields change
+  useEffect(() => { setConfirmDupe(false) }, [selected?.id, condition, language, variant])
+
   const suggestions = catalog && query.length >= 2
     ? searchCards(catalog, query, 20)
     : []
@@ -101,8 +106,14 @@ export function AddCardPage() {
     e => e.condition === condition && e.language === language && e.variant === variant
   )
 
-  async function handleSave() {
+  async function doSave(exit: boolean) {
     if (!selected) return
+    // When the card is already owned, require a second click to confirm.
+    if (existingEntries.length > 0 && !confirmDupe) {
+      setConfirmDupe(true)
+      return
+    }
+    setConfirmDupe(false)
     setSaving(true)
     try {
       await addInventoryEntry({
@@ -113,7 +124,7 @@ export function AddCardPage() {
         qty,
         pricePaid: pricePaid ? parseFloat(pricePaid) : undefined,
       })
-      if (fromScan) {
+      if (exit || fromScan) {
         navigate(-1)
       } else {
         // Dismiss the on-screen keyboard so the celebration overlay is not
@@ -125,24 +136,6 @@ export function AddCardPage() {
         setQty(1)
         setPricePaid('')
       }
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleSaveAndExit() {
-    if (!selected) return
-    setSaving(true)
-    try {
-      await addInventoryEntry({
-        cardId: selected.id,
-        condition,
-        language,
-        variant,
-        qty,
-        pricePaid: pricePaid ? parseFloat(pricePaid) : undefined,
-      })
-      navigate(-1)
     } finally {
       setSaving(false)
     }
@@ -290,18 +283,23 @@ export function AddCardPage() {
 
           {/* Already-in-collection warning */}
           {existingEntries.length > 0 && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-amber-300">
-                Déjà dans votre collection · {totalExisting} exemplaire{totalExisting > 1 ? 's' : ''}
-              </p>
+            <div className="bg-amber-500/20 border-2 border-amber-400/60 rounded-xl p-4 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <p className="text-sm font-bold text-amber-300">
+                  Déjà dans ta collection — {totalExisting} exemplaire{totalExisting > 1 ? 's' : ''}
+                </p>
+              </div>
               {existingEntries.map((e, i) => (
-                <p key={i} className="text-xs text-amber-400/80">
+                <p key={i} className="text-xs text-amber-300/80 pl-6">
                   {e.qty}× &nbsp;·&nbsp; {e.condition} &nbsp;·&nbsp; {e.language} &nbsp;·&nbsp; {e.variant}
                 </p>
               ))}
               {exactMatch && (
-                <p className="text-xs text-amber-400/60 pt-0.5 border-t border-amber-500/20">
-                  Cette combinaison existe déjà — la quantité sera mise à jour.
+                <p className="text-xs text-amber-400/70 pl-6 pt-0.5 border-t border-amber-500/30">
+                  Même combinaison — l'ajout incrémentera la quantité.
                 </p>
               )}
             </div>
@@ -430,27 +428,40 @@ export function AddCardPage() {
           {/* Action buttons */}
           <div className="space-y-3">
             <button
-              onClick={handleSave}
+              onClick={() => doSave(false)}
               disabled={saving}
-              className="w-full bg-brand-500 hover:bg-brand-600 text-white font-semibold
-                         py-3 rounded-xl transition-colors disabled:opacity-50
-                         flex items-center justify-center gap-2"
+              className={`w-full font-semibold py-3 rounded-xl transition-all disabled:opacity-50
+                         flex items-center justify-center gap-2
+                         ${confirmDupe
+                           ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                           : 'bg-brand-500 hover:bg-brand-600 text-white'}`}
             >
-              {saving ? <Spinner className="w-5 h-5" /> : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
+              {saving ? <Spinner className="w-5 h-5" /> : confirmDupe ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                  Déjà possédée (×{totalExisting}) — Confirmer ?
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {fromScan ? 'Ajouter à la collection' : 'Ajouter + continuer'}
+                </>
               )}
-              {fromScan ? 'Ajouter à la collection' : 'Ajouter + continuer'}
             </button>
             {!fromScan && (
               <button
-                onClick={handleSaveAndExit}
+                onClick={() => doSave(true)}
                 disabled={saving}
-                className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
-                           py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
+                className={`w-full font-medium py-3 rounded-xl transition-all disabled:opacity-50 text-sm
+                  ${confirmDupe
+                    ? 'bg-amber-500/20 border border-amber-400/60 text-amber-300 hover:bg-amber-500/30'
+                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}
               >
-                Sauvegarder et terminer
+                {confirmDupe ? 'Confirmer et terminer' : 'Sauvegarder et terminer'}
               </button>
             )}
           </div>
