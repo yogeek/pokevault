@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, searchCards } from '@/lib/catalog'
-import { recognizeCardWithClaude, recognizeCardWithClaudeScored, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
+import { recognizeCardWithClaudeScored, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
 import { db } from '@/db'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
@@ -107,6 +107,9 @@ export function ScanPage() {
   const [mode, setMode] = useState<ScanMode>(saved?.mode ?? 'idle')
   const [scanType, setScanType] = useState<ScanType>(saved?.scanType ?? 'card')
   const [result, setResult] = useState<CatalogCard[]>(saved?.result ?? [])
+  // resultScored: single-card candidates with confidence scores (best first).
+  // Empty when restored from history/localStorage (scores are not persisted).
+  const [resultScored, setResultScored] = useState<ScoredCard[]>([])
   // pageResult: one ScoredCard[] per detected card (candidates sorted by confidence)
   const [pageResult, setPageResult] = useState<ScoredCard[][]>(saved?.pageResult ?? [])
   const [pageSelected, setPageSelected] = useState<Set<string>>(
@@ -242,7 +245,9 @@ export function ScanPage() {
     if (!key) return
     setMode('recognizing')
     try {
-      const cards = await recognizeCardWithClaude(canvas, key, catalog, aiModel)
+      const scored = await recognizeCardWithClaudeScored(canvas, key, catalog, aiModel)
+      const cards = scored.map(s => s.card)
+      setResultScored(scored)
       setResult(cards)
       setMode('result')
       saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview: currentPreview })
@@ -429,6 +434,7 @@ export function ScanPage() {
   const reset = useCallback(() => {
     clearScan()
     setResult([])
+    setResultScored([])
     setPageResult([])
     setPageSelected(new Set())
     setCandidateSheet(null)
@@ -967,24 +973,32 @@ export function ScanPage() {
               <button onClick={() => navigate('/add')} className="text-brand-400 underline">Recherche manuelle →</button>
             </p>
           )}
-          {result.map(card => (
-            <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
-              className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
-              <img
-                src={card.imageUrl} alt={cardName(card)}
-                className="w-12 rounded object-cover active:opacity-70"
-                onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
-                onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{cardName(card)}</p>
-                <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
-              </div>
-              <svg className="w-5 h-5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          ))}
+          {(resultScored.length > 0 ? resultScored : result.map(card => ({ card, score: 0 }))).map(({ card, score }) => {
+            const { badge } = scoreColor(score)
+            return (
+              <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
+                className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
+                <img
+                  src={card.imageUrl} alt={cardName(card)}
+                  className="w-12 rounded object-cover active:opacity-70"
+                  onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                  onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{cardName(card)}</p>
+                  <p className="text-xs text-slate-400">{cardSetName(card)} · #{card.number}/{card.total}</p>
+                </div>
+                {score > 0 && (
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${badge}`}>
+                    {score}%
+                  </span>
+                )}
+                <svg className="w-5 h-5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )
+          })}
           {preview && (
             <button onClick={retryScan}
               className="w-full border border-brand-500/40 bg-brand-500/10 rounded-xl py-2.5 text-sm text-brand-400">

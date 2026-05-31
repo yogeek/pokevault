@@ -103,6 +103,9 @@ export function AddCardPage() {
       if (fromScan) {
         navigate(-1)
       } else {
+        // Dismiss the on-screen keyboard so the celebration overlay is not
+        // hidden behind it when the search view (autoFocus) re-renders.
+        ;(document.activeElement as HTMLElement | null)?.blur()
         setCelebrationCard(selected)
         setSelected(null)
         setQuery('')
@@ -202,7 +205,7 @@ export function AddCardPage() {
             placeholder="Nom, numéro ou set…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            autoFocus
+            autoFocus={!celebrationCard}
             className="w-full bg-slate-800 rounded-lg px-3 py-2.5 text-sm
                        placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />

@@ -2,14 +2,14 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShareStore } from '@/stores/share'
 import { useCatalogStore } from '@/stores/catalog'
-import { cardName } from '@/lib/catalog'
+import { cardName, cardSetName, searchCards } from '@/lib/catalog'
 import type { CatalogData } from '@/lib/catalog'
 import { checkCard, decryptApiKey } from '@/lib/share'
 import { getGifts, addGift, removeGift } from '@/lib/gifts'
 import { upsertSharedView } from '@/db/sharing'
-import { recognizeCardWithClaude, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
+import { recognizeCardWithClaudeScored, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
-import type { AiModelId } from '@/lib/ai-scan'
+import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
 import { CardImage } from '@/components/ui/CardImage'
@@ -115,6 +115,11 @@ function SharedViewContent({
   const [scanResult, setScanResult] = useState<{ result: CheckResult; card?: CatalogCard } | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
+  // Scored candidates from the last scan (best first); user taps one to check it
+  const [candidates, setCandidates] = useState<ScoredCard[]>([])
+  // Name-search sub-mode within the scanner tab
+  const [searchMode, setSearchMode] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [localApiKey, setLocalApiKey] = useState<string | null>(null)
   const [tab, setTab] = useState<'scanner' | 'collection' | 'wishlist'>('scanner')
   const [gifts, setGifts] = useState<string[]>(() => getGifts(ownerName))
@@ -149,11 +154,18 @@ function SharedViewContent({
     return stopCamera
   }, [scanMode, startCamera, stopCamera])
 
+  // Check a chosen card against the shared snapshot and show the result
+  const checkChosen = useCallback((card: CatalogCard) => {
+    setCandidates([])
+    setScanResult({ result: checkCard(card.id, snap), card })
+  }, [snap])
+
   const processCanvas = useCallback(async (canvas: HTMLCanvasElement) => {
     if (!catalog) return
     setScanning(true)
     setScanResult(null)
     setScanError(null)
+    setCandidates([])
     try {
       const storedModel = await getSetting('aiModel') as AiModelId | undefined
       const apiKey = localApiKey || guestApiKey
@@ -162,12 +174,12 @@ function SharedViewContent({
         return
       }
       const model = storedModel ?? DEFAULT_AI_MODEL
-      const cards = await recognizeCardWithClaude(canvas, apiKey, catalog, model)
-      const detectedId = cards[0]?.id
-      if (!detectedId) { setScanResult({ result: { type: 'unknown' } }); return }
-      const result = checkCard(detectedId, snap)
-      const card = catalog.cards.find(c => c.id === detectedId)
-      setScanResult({ result, card })
+      const scored = await recognizeCardWithClaudeScored(canvas, apiKey, catalog, model)
+      if (scored.length === 0) { setScanResult({ result: { type: 'unknown' } }); return }
+      // Auto-check the top match, but keep the full list so the user can correct it
+      setCandidates(scored)
+      const best = scored[0].card
+      setScanResult({ result: checkCard(best.id, snap), card: best })
     } catch (e) {
       // Surface the real error (invalid key, API/network failure, timeout)
       // instead of masking it as a generic "card not recognized".
@@ -207,6 +219,13 @@ function SharedViewContent({
     }
     reader.readAsDataURL(file)
   }, [processCanvas])
+
+  // Live catalog search for the "Chercher par nom" sub-mode
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q || !catalog || q.length < 2) return []
+    return searchCards(catalog, q, 15)
+  }, [searchQuery, catalog])
 
   // Build card lists from snapshot
   const { inventoryCards, wishlistCards } = useMemo(() => {
@@ -314,23 +333,23 @@ function SharedViewContent({
             <div className="px-4 space-y-2">
               <div className="flex gap-2">
                 <button
-                  onClick={() => setScanMode(true)}
+                  onClick={() => { setSearchMode(false); setScanMode(true) }}
                   disabled={apiKeyMissing}
                   className="flex-1 bg-brand-500 hover:bg-brand-600 text-white font-semibold
-                             py-4 rounded-2xl flex flex-col items-center gap-1.5
+                             py-3.5 rounded-2xl flex flex-col items-center gap-1
                              disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round"
                       d="M3 9V5a2 2 0 012-2h4M3 15v4a2 2 0 002 2h4m10-14h4a2 2 0 012 2v4m-6 10h4a2 2 0 002-2v-4M7 12h10" />
                   </svg>
-                  <span className="text-sm">Scanner</span>
+                  <span className="text-xs">Scanner</span>
                 </button>
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => { setSearchMode(false); fileInputRef.current?.click() }}
                   disabled={scanning || apiKeyMissing}
                   className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 font-semibold
-                             py-4 rounded-2xl flex flex-col items-center gap-1.5
+                             py-3.5 rounded-2xl flex flex-col items-center gap-1
                              hover:border-brand-500/40 transition-colors
                              disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -341,12 +360,61 @@ function SharedViewContent({
                           d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                   }
-                  <span className="text-sm">{scanning ? 'Analyse…' : 'Galerie'}</span>
+                  <span className="text-xs">{scanning ? 'Analyse…' : 'Galerie'}</span>
+                </button>
+                <button
+                  onClick={() => { setScanResult(null); setCandidates([]); setScanError(null); setSearchMode(m => !m) }}
+                  className={`flex-1 font-semibold py-3.5 rounded-2xl flex flex-col items-center gap-1 border transition-colors
+                    ${searchMode
+                      ? 'bg-brand-500/10 border-brand-500 text-brand-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-200 hover:border-brand-500/40'}`}
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                  </svg>
+                  <span className="text-xs">Par nom</span>
                 </button>
               </div>
-              <p className="text-xs text-center text-slate-500">
-                Scanne une carte pour vérifier si {ownerName} l'a déjà ou la veut
-              </p>
+
+              {searchMode ? (
+                <div className="space-y-2">
+                  <input
+                    type="search"
+                    autoFocus
+                    placeholder="Nom, numéro ou set…"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-800 rounded-lg px-3 py-2.5 text-sm
+                               placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  {searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-4">Aucun résultat pour « {searchQuery} »</p>
+                  )}
+                  <div className="space-y-1">
+                    {searchResults.map(card => (
+                      <button
+                        key={card.id}
+                        onClick={() => checkChosen(card)}
+                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800 text-left transition-colors"
+                      >
+                        <CardImage src={card.imageUrl} alt={cardName(card)} className="w-9 h-12 object-cover rounded" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{cardName(card)}</p>
+                          <p className="text-xs text-slate-400 truncate">{cardSetName(card)} · #{card.number}</p>
+                        </div>
+                        <svg className="w-4 h-4 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-center text-slate-500">
+                  Scanne une carte pour vérifier si {ownerName} l'a déjà ou la veut
+                </p>
+              )}
               {scanError && (
                 <div className="mt-3 border border-red-500/30 bg-red-500/10 rounded-2xl p-4">
                   <p className="text-sm font-semibold text-red-300">Échec du scan</p>
@@ -360,6 +428,13 @@ function SharedViewContent({
                   ownerName={ownerName}
                   captured={!!scanResult.card && gifts.includes(scanResult.card.id)}
                   onToggleCapture={toggleCapture}
+                />
+              )}
+              {candidates.length > 1 && (
+                <CandidateList
+                  candidates={candidates}
+                  activeId={scanResult?.card?.id}
+                  onPick={checkChosen}
                 />
               )}
               {gifts.length > 0 && (
@@ -663,6 +738,47 @@ function ScanResultCard({
       <div className="flex-1">
         <p className="font-semibold text-base">Carte non reconnue</p>
         <p className="text-sm text-slate-400 mt-0.5">Essaie de mieux cadrer ou recherche manuellement.</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Candidate list (correct a wrong AI guess) ────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score >= 80) return 'bg-green-500/20 text-green-400'
+  if (score >= 60) return 'bg-amber-500/20 text-amber-400'
+  return 'bg-slate-600/40 text-slate-400'
+}
+
+function CandidateList({ candidates, activeId, onPick }: {
+  candidates: ScoredCard[]
+  activeId?: string
+  onPick: (card: CatalogCard) => void
+}) {
+  return (
+    <div className="mt-3 border border-slate-700 bg-slate-800/60 rounded-2xl p-3">
+      <p className="text-xs text-slate-400 mb-2">Mauvaise carte ? Choisis la bonne :</p>
+      <div className="space-y-1">
+        {candidates.map(({ card, score }) => (
+          <button
+            key={card.id}
+            onClick={() => onPick(card)}
+            className={`w-full flex items-center gap-3 p-2 rounded-xl text-left transition-colors
+              ${card.id === activeId ? 'bg-brand-500/10 ring-1 ring-brand-500/40' : 'hover:bg-slate-800'}`}
+          >
+            <CardImage src={card.imageUrl} alt={cardName(card)} className="w-8 h-11 object-cover rounded" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{cardName(card)}</p>
+              <p className="text-xs text-slate-400 truncate">{cardSetName(card)} · #{card.number}</p>
+            </div>
+            {score > 0 && (
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${scoreColor(score)}`}>
+                {score}%
+              </span>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   )
