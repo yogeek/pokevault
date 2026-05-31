@@ -224,8 +224,9 @@ export function AddCardPage() {
             </p>
           )}
           <div className="space-y-1">
-            {suggestions.map(card => {
+            {suggestions.map((card, i) => {
               const qty = ownedQty?.get(card.id) ?? 0
+              const lbList = suggestions.map(c => ({ src: c.imageUrl, alt: cardName(c) }))
               return (
                 <button
                   key={card.id}
@@ -233,7 +234,8 @@ export function AddCardPage() {
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-left
                              active:bg-slate-700 transition-colors"
                 >
-                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
+                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded"
+                    list={lbList} listIndex={i} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{cardName(card)}</p>
                     <p className="text-xs text-slate-400 truncate">
