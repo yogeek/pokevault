@@ -497,7 +497,7 @@ export function AddCardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
                   )}
-                  {fromScan ? 'Ajouter à la collection' : 'Ajouter + continuer'}
+                  {fromScan ? 'Ajouter à la collection' : 'Ajouter'}
                 </button>
                 {!fromScan && (
                   <button
@@ -506,7 +506,7 @@ export function AddCardPage() {
                     className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
                                py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
                   >
-                    Sauvegarder et terminer
+                    Ajouter et fermer
                   </button>
                 )}
               </>
