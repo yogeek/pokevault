@@ -135,7 +135,7 @@ export function AddCardPage() {
     e => e.condition === condition && e.language === language && e.variant === variant
   )
 
-  async function doSave(exit: boolean) {
+  async function doSave() {
     if (!selected) return
     // When the card is already owned, require a second click to confirm.
     if (existingEntries.length > 0 && !confirmDupe) {
@@ -153,7 +153,7 @@ export function AddCardPage() {
         qty,
         pricePaid: pricePaid ? parseFloat(pricePaid) : undefined,
       })
-      if (exit || fromScan) {
+      if (fromScan) {
         navigate(-1)
       } else {
         // Dismiss the on-screen keyboard so the celebration overlay is not
@@ -461,7 +461,7 @@ export function AddCardPage() {
             {confirmDupe ? (
               <>
                 <button
-                  onClick={() => doSave(false)}
+                  onClick={() => doSave()}
                   disabled={saving}
                   className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold
                              py-3 rounded-xl transition-all disabled:opacity-50
@@ -486,7 +486,7 @@ export function AddCardPage() {
             ) : (
               <>
                 <button
-                  onClick={() => doSave(false)}
+                  onClick={() => doSave()}
                   disabled={saving}
                   className="w-full bg-brand-500 hover:bg-brand-600 text-white font-semibold
                              py-3 rounded-xl transition-colors disabled:opacity-50
@@ -501,12 +501,12 @@ export function AddCardPage() {
                 </button>
                 {!fromScan && (
                   <button
-                    onClick={() => doSave(true)}
+                    onClick={() => setSelected(null)}
                     disabled={saving}
                     className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
                                py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
                   >
-                    Ajouter et fermer
+                    Annuler
                   </button>
                 )}
               </>
