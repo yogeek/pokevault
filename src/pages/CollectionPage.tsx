@@ -138,6 +138,21 @@ export function CollectionPage() {
     })
   }, [grouped, search, filterSet, filterCondition, filterSupertype, sort, sortDir, cardById])
 
+  // Ordered list of {src, alt} items and a cardId→index map for lightbox swipe navigation
+  // in the list view. Built from displayedCards so order and filters are respected.
+  const [lbItems, lbIdxMap] = useMemo(() => {
+    const items: { src: string; alt: string }[] = []
+    const map = new Map<string, number>()
+    for (const cardId of displayedCards) {
+      const card = cardById.get(cardId)
+      if (card) {
+        map.set(cardId, items.length)
+        items.push({ src: card.imageUrl, alt: cardName(card) })
+      }
+    }
+    return [items, map] as const
+  }, [displayedCards, cardById])
+
   const totalCards = useMemo(
     () => inventory?.reduce((s, e) => s + e.qty, 0) ?? 0,
     [inventory],
@@ -552,7 +567,8 @@ export function CollectionPage() {
                   </div>
                 )}
                 {card ? (
-                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
+                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded"
+                    list={lbItems} listIndex={lbIdxMap.get(cardId) ?? 0} />
                 ) : (
                   <div className="w-10 h-14 bg-slate-700 rounded flex-shrink-0" />
                 )}

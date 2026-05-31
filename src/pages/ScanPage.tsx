@@ -133,7 +133,7 @@ export function ScanPage() {
   const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
-  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [lightbox, setLightbox] = useState<{ items: { src: string; alt: string }[]; index: number } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory)
@@ -578,7 +578,7 @@ export function ScanPage() {
 
   return (
     <div className="pb-24">
-      {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
+      {lightbox && <ImageLightbox items={lightbox.items} startIndex={lightbox.index} onClose={() => setLightbox(null)} />}
       {celebrationCards && (
         <MultiCardCelebration cards={celebrationCards} onDismiss={() => setCelebrationCards(null)} />
       )}
@@ -689,6 +689,7 @@ export function ScanPage() {
                   if (sheetSearchQuery.trim() && items.length === 0) {
                     return <p className="text-center text-slate-500 text-sm py-6">Aucun résultat</p>
                   }
+                  const lbList = items.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) }))
                   return items.map((sc, i) => {
                     const { badge } = scoreColor(sc.score)
                     const isCurrent = !sheetSearchQuery.trim() && i === 0
@@ -707,7 +708,7 @@ export function ScanPage() {
                             alt={cardName(sc.card)}
                             className="w-10 h-14 object-cover rounded"
                             onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
-                            onClick={e => { e.stopPropagation(); setLightbox({ src: sc.card.imageUrl, alt: cardName(sc.card) }) }}
+                            onClick={e => { e.stopPropagation(); setLightbox({ items: lbList, index: i }) }}
                           />
                           <span
                             className="absolute inset-0 flex items-center justify-center rounded
@@ -973,15 +974,16 @@ export function ScanPage() {
               <button onClick={() => navigate('/add')} className="text-brand-400 underline">Recherche manuelle →</button>
             </p>
           )}
-          {(resultScored.length > 0 ? resultScored : result.map(card => ({ card, score: 0 }))).map(({ card, score }) => {
+          {(resultScored.length > 0 ? resultScored : result.map(card => ({ card, score: 0 }))).map(({ card, score }, i, arr) => {
             const { badge } = scoreColor(score)
+            const lbList = arr.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) }))
             return (
               <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
                 className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
                 <img
                   src={card.imageUrl} alt={cardName(card)}
                   className="w-12 rounded object-cover active:opacity-70"
-                  onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                  onClick={e => { e.stopPropagation(); setLightbox({ items: lbList, index: i }) }}
                   onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                 />
                 <div className="flex-1 min-w-0">
@@ -1095,7 +1097,7 @@ export function ScanPage() {
                     <img
                       src={card.imageUrl} alt={cardName(card)}
                       className="w-10 h-14 object-cover rounded flex-shrink-0"
-                      onClick={e => { e.stopPropagation(); setLightbox({ src: card.imageUrl, alt: cardName(card) }) }}
+                      onClick={e => { e.stopPropagation(); setLightbox({ items: candidates.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) })), index: 0 }) }}
                       onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                     />
                     <div className="flex-1 min-w-0">

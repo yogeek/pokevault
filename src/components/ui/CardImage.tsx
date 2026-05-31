@@ -1,23 +1,26 @@
 import { useState } from 'react'
 import { ImageLightbox } from './ImageLightbox'
 
+interface Item { src: string; alt: string }
+
 interface Props {
   src: string
   alt: string
   className?: string
+  /** Full ordered list for lightbox swipe navigation. When omitted, the lightbox shows this card only. */
+  list?: Item[]
+  /** Index of this card within `list`. */
+  listIndex?: number
 }
 
-/**
- * Card thumbnail that opens a full-screen lightbox on tap.
- * Wraps the image in a relative container so the zoom-indicator
- * overlay stays contained, and stops propagation so parent
- * click handlers (navigation) are not triggered.
- */
-export function CardImage({ src, alt, className }: Props) {
+export function CardImage({ src, alt, className, list, listIndex = 0 }: Props) {
   const [open, setOpen] = useState(false)
+  const items = list ?? [{ src, alt }]
+  const startIndex = list ? listIndex : 0
+
   return (
     <>
-      {open && <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+      {open && <ImageLightbox items={items} startIndex={startIndex} onClose={() => setOpen(false)} />}
       <span className="relative inline-block flex-shrink-0 group">
         <img
           src={src}
