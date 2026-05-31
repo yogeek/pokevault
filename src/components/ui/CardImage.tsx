@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ImageLightbox } from './ImageLightbox'
 import { cardImgError } from '@/lib/imageError'
 
-interface Item { src: string; alt: string }
+interface Item { src: string; alt: string; id?: string }
 
 interface Props {
   src: string

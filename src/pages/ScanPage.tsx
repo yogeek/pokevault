@@ -133,7 +133,7 @@ export function ScanPage() {
   const [celebrationCards, setCelebrationCards] = useState<CatalogCard[] | null>(null)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
-  const [lightbox, setLightbox] = useState<{ items: { src: string; alt: string }[]; index: number } | null>(null)
+  const [lightbox, setLightbox] = useState<{ items: { src: string; alt: string; id?: string }[]; index: number } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory)
@@ -689,7 +689,7 @@ export function ScanPage() {
                   if (sheetSearchQuery.trim() && items.length === 0) {
                     return <p className="text-center text-slate-500 text-sm py-6">Aucun résultat</p>
                   }
-                  const lbList = items.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) }))
+                  const lbList = items.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id }))
                   return items.map((sc, i) => {
                     const { badge } = scoreColor(sc.score)
                     const isCurrent = !sheetSearchQuery.trim() && i === 0
@@ -976,7 +976,7 @@ export function ScanPage() {
           )}
           {(resultScored.length > 0 ? resultScored : result.map(card => ({ card, score: 0 }))).map(({ card, score }, i, arr) => {
             const { badge } = scoreColor(score)
-            const lbList = arr.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) }))
+            const lbList = arr.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id }))
             return (
               <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
                 className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
@@ -1097,7 +1097,7 @@ export function ScanPage() {
                     <img
                       src={card.imageUrl} alt={cardName(card)}
                       className="w-10 h-14 object-cover rounded flex-shrink-0"
-                      onClick={e => { e.stopPropagation(); setLightbox({ items: candidates.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card) })), index: 0 }) }}
+                      onClick={e => { e.stopPropagation(); setLightbox({ items: candidates.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id })), index: 0 }) }}
                       onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                     />
                     <div className="flex-1 min-w-0">

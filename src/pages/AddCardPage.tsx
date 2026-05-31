@@ -255,7 +255,7 @@ export function AddCardPage() {
           <div className="space-y-1">
             {suggestions.map((card, i) => {
               const qty = ownedQty?.get(card.id) ?? 0
-              const lbList = suggestions.map(c => ({ src: c.imageUrl, alt: cardName(c) }))
+              const lbList = suggestions.map(c => ({ src: c.imageUrl, alt: cardName(c), id: c.id }))
               return (
                 <button
                   key={card.id}

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { cardImgError } from '@/lib/imageError'
 
-interface Item { src: string; alt: string }
+interface Item { src: string; alt: string; id?: string }
 
 interface Props {
   items: Item[]
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function ImageLightbox({ items, startIndex = 0, onClose }: Props) {
+  const navigate = useNavigate()
   const [idx, setIdx] = useState(startIndex)
   const [langFallback, setLangFallback] = useState<'en' | 'placeholder' | null>(null)
   const touchStartX = useRef<number | null>(null)
@@ -67,8 +69,13 @@ export function ImageLightbox({ items, startIndex = 0, onClose }: Props) {
         key={idx}
         src={src}
         alt={alt}
-        className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
-        onClick={e => e.stopPropagation()}
+        className={`max-w-full max-h-full object-contain rounded-xl shadow-2xl
+                    ${items[idx]?.id ? 'cursor-pointer' : ''}`}
+        onClick={e => {
+          e.stopPropagation()
+          const id = items[idx]?.id
+          if (id) { onClose(); navigate(`/card/${id}`) }
+        }}
         onError={e => cardImgError(e, setLangFallback)}
       />
 

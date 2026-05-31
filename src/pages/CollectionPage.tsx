@@ -208,13 +208,13 @@ export function CollectionPage() {
   // Ordered list of {src, alt} items and a cardId→index map for lightbox swipe navigation
   // in the list view. Built from displayedCards so order and filters are respected.
   const [lbItems, lbIdxMap] = useMemo(() => {
-    const items: { src: string; alt: string }[] = []
+    const items: { src: string; alt: string; id: string }[] = []
     const map = new Map<string, number>()
     for (const cardId of displayedCards) {
       const card = cardById.get(cardId)
       if (card) {
         map.set(cardId, items.length)
-        items.push({ src: card.imageUrl, alt: cardName(card) })
+        items.push({ src: card.imageUrl, alt: cardName(card), id: cardId })
       }
     }
     return [items, map] as const
