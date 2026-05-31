@@ -44,17 +44,33 @@ export async function loadCatalog(onProgress?: (p: number) => void): Promise<Cat
   return cache
 }
 
+// Searchable text for a card: name(s), id, set name(s), and the card number in
+// several forms so that "21", "021", "21/94" and "021/094" all match. Cards
+// store number as a bare string ("21", no leading zeros) and total as a number,
+// whereas users read "021/094" off the card itself.
+function cardHaystack(c: CatalogCard): string {
+  const num  = String(c.number)
+  const num3 = num.padStart(3, '0')
+  const tot  = String(c.total)
+  const tot3 = tot.padStart(3, '0')
+  return [
+    c.name, c.nameFr, c.id, c.setName, c.setNameFr,
+    num, num3,
+    `${num}/${tot}`, `${num3}/${tot3}`,
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
 export function searchCards(catalog: CatalogData, query: string, limit = 30): CatalogCard[] {
   const q = query.toLowerCase().trim()
   if (!q) return []
+  // Every whitespace-separated term must match, so "otaria 021/094" works:
+  // one term hits the name, the other the number.
+  const terms = q.split(/\s+/)
   return catalog.cards
-    .filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      c.nameFr?.toLowerCase().includes(q) ||
-      c.id.toLowerCase().includes(q) ||
-      c.number.includes(q) ||
-      c.setName.toLowerCase().includes(q),
-    )
+    .filter(c => {
+      const hay = cardHaystack(c)
+      return terms.every(t => hay.includes(t))
+    })
     .slice(0, limit)
 }
 
