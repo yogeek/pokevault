@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useCatalogStore } from '@/stores/catalog'
 import { searchCards, cardName, cardSetName } from '@/lib/catalog'
 import { addInventoryEntry, getInventoryForCard } from '@/db/inventory'
+import { db } from '@/db'
 import { ConditionBadge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { CardAddedCelebration } from '@/components/ui/CardAddedCelebration'
@@ -49,6 +51,17 @@ export function AddCardPage() {
   const { state } = useLocation()
   const fromScan = !!(state as { fromScan?: boolean } | null)?.fromScan
   const catalog = useCatalogStore(s => s.catalog)
+
+  // cardId → total qty owned, used to show collection status in search results
+  const ownedQty = useLiveQuery(
+    () => db.inventory.toArray().then(entries => {
+      const map = new Map<string, number>()
+      for (const e of entries) map.set(e.cardId, (map.get(e.cardId) ?? 0) + e.qty)
+      return map
+    }),
+    [],
+    new Map<string, number>(),
+  )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
@@ -218,23 +231,35 @@ export function AddCardPage() {
             </p>
           )}
           <div className="space-y-1">
-            {suggestions.map(card => (
-              <button
-                key={card.id}
-                onClick={() => { setSelected(card); setQuery('') }}
-                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-left
-                           active:bg-slate-700 transition-colors"
-              >
-                <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{cardName(card)}</p>
-                  <p className="text-xs text-slate-400 truncate">
-                    {cardSetName(card)} · #{card.number} · {card.rarity}
-                  </p>
-                </div>
-                <span className="text-xs text-slate-500 shrink-0">{card.supertype}</span>
-              </button>
-            ))}
+            {suggestions.map(card => {
+              const qty = ownedQty?.get(card.id) ?? 0
+              return (
+                <button
+                  key={card.id}
+                  onClick={() => { setSelected(card); setQuery('') }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-left
+                             active:bg-slate-700 transition-colors"
+                >
+                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{cardName(card)}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {cardSetName(card)} · #{card.number} · {card.rarity}
+                    </p>
+                  </div>
+                  {qty > 0 ? (
+                    <span className="text-xs font-semibold text-emerald-400 shrink-0 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      ×{qty}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500 shrink-0">{card.supertype}</span>
+                  )}
+                </button>
+              )
+            })}
             {catalog && query.length >= 2 && suggestions.length === 0 && (
               <p className="text-sm text-slate-500 text-center py-6">
                 Aucun résultat pour « {query} »
