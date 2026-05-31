@@ -429,42 +429,58 @@ export function AddCardPage() {
 
           {/* Action buttons */}
           <div className="space-y-3">
-            <button
-              onClick={() => doSave(false)}
-              disabled={saving}
-              className={`w-full font-semibold py-3 rounded-xl transition-all disabled:opacity-50
-                         flex items-center justify-center gap-2
-                         ${confirmDupe
-                           ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                           : 'bg-brand-500 hover:bg-brand-600 text-white'}`}
-            >
-              {saving ? <Spinner className="w-5 h-5" /> : confirmDupe ? (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                  </svg>
-                  Déjà possédée (×{totalExisting}) — Confirmer ?
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
+            {confirmDupe ? (
+              <>
+                <button
+                  onClick={() => doSave(false)}
+                  disabled={saving}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold
+                             py-3 rounded-xl transition-all disabled:opacity-50
+                             flex items-center justify-center gap-2"
+                >
+                  {saving ? <Spinner className="w-5 h-5" /> : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    </svg>
+                  )}
+                  Ajouter quand même (×{totalExisting} déjà possédée{totalExisting > 1 ? 's' : ''})
+                </button>
+                <button
+                  onClick={() => setConfirmDupe(false)}
+                  disabled={saving}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
+                             py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
+                >
+                  Annuler
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => doSave(false)}
+                  disabled={saving}
+                  className="w-full bg-brand-500 hover:bg-brand-600 text-white font-semibold
+                             py-3 rounded-xl transition-colors disabled:opacity-50
+                             flex items-center justify-center gap-2"
+                >
+                  {saving ? <Spinner className="w-5 h-5" /> : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
                   {fromScan ? 'Ajouter à la collection' : 'Ajouter + continuer'}
-                </>
-              )}
-            </button>
-            {!fromScan && (
-              <button
-                onClick={() => doSave(true)}
-                disabled={saving}
-                className={`w-full font-medium py-3 rounded-xl transition-all disabled:opacity-50 text-sm
-                  ${confirmDupe
-                    ? 'bg-amber-500/20 border border-amber-400/60 text-amber-300 hover:bg-amber-500/30'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}
-              >
-                {confirmDupe ? 'Confirmer et terminer' : 'Sauvegarder et terminer'}
-              </button>
+                </button>
+                {!fromScan && (
+                  <button
+                    onClick={() => doSave(true)}
+                    disabled={saving}
+                    className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium
+                               py-3 rounded-xl transition-colors disabled:opacity-50 text-sm"
+                  >
+                    Sauvegarder et terminer
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
