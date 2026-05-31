@@ -60,16 +60,31 @@ function cardHaystack(c: CatalogCard): string {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+// Score how well a card's name/nameFr matches a single term.
+// Higher = more relevant: exact match > starts-with > contains > other field.
+function termScore(c: CatalogCard, term: string): number {
+  const en = c.name.toLowerCase()
+  const fr = (c.nameFr ?? '').toLowerCase()
+  if (en === term || fr === term) return 4
+  if (en.startsWith(term) || fr.startsWith(term)) return 3
+  if (en.includes(term) || fr.includes(term)) return 2
+  return 1 // matched some other field (set, number, id…)
+}
+
 export function searchCards(catalog: CatalogData, query: string, limit = 30): CatalogCard[] {
   const q = query.toLowerCase().trim()
   if (!q) return []
-  // Every whitespace-separated term must match, so "otaria 021/094" works:
-  // one term hits the name, the other the number.
+  // Every whitespace-separated term must match (AND semantics).
   const terms = q.split(/\s+/)
   return catalog.cards
     .filter(c => {
       const hay = cardHaystack(c)
       return terms.every(t => hay.includes(t))
+    })
+    .sort((a, b) => {
+      const sa = terms.reduce((acc, t) => acc + termScore(a, t), 0)
+      const sb = terms.reduce((acc, t) => acc + termScore(b, t), 0)
+      return sb - sa
     })
     .slice(0, limit)
 }
