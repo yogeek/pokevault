@@ -12,12 +12,13 @@ interface Props {
 
 export function ImageLightbox({ items, startIndex = 0, onClose }: Props) {
   const [idx, setIdx] = useState(startIndex)
+  const [langFallback, setLangFallback] = useState<'en' | 'placeholder' | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
   const multiple = items.length > 1
 
-  const prev = () => setIdx(i => Math.max(0, i - 1))
-  const next = () => setIdx(i => Math.min(items.length - 1, i + 1))
+  const prev = () => { setIdx(i => Math.max(0, i - 1)); setLangFallback(null) }
+  const next = () => { setIdx(i => Math.min(items.length - 1, i + 1)); setLangFallback(null) }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,8 +69,17 @@ export function ImageLightbox({ items, startIndex = 0, onClose }: Props) {
         alt={alt}
         className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
         onClick={e => e.stopPropagation()}
-        onError={cardImgError}
+        onError={e => cardImgError(e, setLangFallback)}
       />
+
+      {/* Language fallback badge */}
+      {langFallback === 'en' && (
+        <div className="absolute top-4 left-4 flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                        bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs">
+          <span>🇬🇧</span>
+          <span>Image en anglais uniquement</span>
+        </div>
+      )}
 
       {/* Prev arrow */}
       {multiple && idx > 0 && (
