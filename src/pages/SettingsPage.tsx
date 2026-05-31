@@ -569,7 +569,7 @@ export function SettingsPage() {
           <p>Base catalogue : Pokémon TCG API (snapshot statique)</p>
         </div>
         <a
-          href="/PRIVACY.md"
+          href={import.meta.env.BASE_URL + 'PRIVACY.md'}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-block text-xs text-brand-400 hover:underline"
