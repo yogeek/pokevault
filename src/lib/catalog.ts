@@ -40,8 +40,31 @@ export async function loadCatalog(onProgress?: (p: number) => void): Promise<Cat
   }
 
   cache = JSON.parse(text) as CatalogData
+  fillMissingImageUrls(cache)
   onProgress?.(1)
   return cache
+}
+
+// For cards where the catalog has no imageUrl (TCGdex hadn't scanned them yet),
+// construct a candidate URL using the series slug inferred from sibling cards
+// in the same set. The UI's onError handler will fall back to the placeholder
+// if the image doesn't exist on the CDN.
+function fillMissingImageUrls(catalog: CatalogData): void {
+  const setSlug = new Map<string, string>()
+  for (const card of catalog.cards) {
+    if (card.imageUrl && !setSlug.has(card.setId)) {
+      const m = card.imageUrl.match(/tcgdex\.net\/(?:fr|en)\/([^/]+)\/[^/]+\//)
+      if (m) setSlug.set(card.setId, m[1])
+    }
+  }
+  for (const card of catalog.cards) {
+    if (!card.imageUrl) {
+      const slug = setSlug.get(card.setId)
+      if (slug) {
+        card.imageUrl = `https://assets.tcgdex.net/fr/${slug}/${card.setId}/${card.number}/high.webp`
+      }
+    }
+  }
 }
 
 // Searchable text for a card: name(s), id, set name(s), and the card number in
