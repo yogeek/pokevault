@@ -492,6 +492,19 @@ function SharedViewContent({
                   onToggleCapture={toggleCapture}
                 />
               )}
+              {candidates.length > 1 && (
+                <CandidateList
+                  candidates={candidates}
+                  activeId={scanResult?.card?.id}
+                  onPick={checkChosen}
+                  onSearchOther={() => {
+                    setCandidates([])
+                    setScanResult(null)
+                    setScanMode(false)
+                    setSearchMode(true)
+                  }}
+                />
+              )}
               <div className="px-4">
                 <button onClick={() => setScanMode(false)} className="text-sm text-slate-400">← Retour</button>
               </div>
