@@ -427,6 +427,7 @@ function SharedViewContent({
                   card={scanResult.card}
                   ownerName={ownerName}
                   captured={!!scanResult.card && gifts.includes(scanResult.card.id)}
+                  topScore={candidates[0]?.score}
                   onToggleCapture={toggleCapture}
                 />
               )}
@@ -482,6 +483,7 @@ function SharedViewContent({
                   card={scanResult.card}
                   ownerName={ownerName}
                   captured={!!scanResult.card && gifts.includes(scanResult.card.id)}
+                  topScore={candidates[0]?.score}
                   onToggleCapture={toggleCapture}
                 />
               )}
@@ -579,12 +581,13 @@ function Pokeball({ state = 'idle', className = '' }: {
 // ─── Scan result ─────────────────────────────────────────────────────────────
 
 function ScanResultCard({
-  result, card, ownerName, captured, onToggleCapture,
+  result, card, ownerName, captured, topScore, onToggleCapture,
 }: {
   result: CheckResult
   card?: CatalogCard
   ownerName: string
   captured: boolean
+  topScore?: number
   onToggleCapture: (cardId: string, next: boolean) => void
 }) {
   // 'idle' | 'capturing' — local animation phase for the absent → capture flow
@@ -602,10 +605,15 @@ function ScanResultCard({
   const cardThumb = card && (
     <div className="flex items-center gap-2">
       <CardImage src={card.imageUrl} alt={cardName(card)} className="w-9 h-12 object-cover rounded" />
-      <div>
+      <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold">{cardName(card)}</p>
         <p className="text-xs text-slate-400">{card.setNameFr ?? card.setName}</p>
       </div>
+      {topScore != null && topScore > 0 && (
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${scoreColor(topScore)}`}>
+          {topScore}%
+        </span>
+      )}
     </div>
   )
 

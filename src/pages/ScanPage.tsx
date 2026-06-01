@@ -135,6 +135,7 @@ export function ScanPage() {
   const [preview, setPreview] = useState<string | null>(saved?.preview ?? null)
   const [lightbox, setLightbox] = useState<{ items: { src: string; alt: string; id?: string }[]; index: number } | null>(null)
   const [aiKey, setAiKey] = useState<string | null | undefined>(undefined)
+  const hasGuestKey = !!sessionStorage.getItem('pokevault_session_api_key')
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory)
 
@@ -815,16 +816,28 @@ export function ScanPage() {
       {mode === 'idle' && (
         <div className="flex flex-col items-center py-8 gap-5 px-6">
           {!aiLoading && !aiConfigured && (
-            <button onClick={() => navigate('/settings')}
-              className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 text-left flex items-start gap-3">
-              <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <p className="text-sm font-medium text-amber-300">Clé API non configurée</p>
-                <p className="text-xs text-amber-400/70 mt-0.5">Appuyez pour configurer →</p>
+            hasGuestKey ? (
+              <div className="w-full bg-brand-500/10 border border-brand-500/30 rounded-2xl px-4 py-3 flex items-start gap-3">
+                <span className="text-lg shrink-0">🔑</span>
+                <div>
+                  <p className="text-sm font-medium text-brand-300">Scan disponible uniquement via la vue partagée</p>
+                  <p className="text-xs text-brand-400/70 mt-0.5">
+                    La clé IA de ton ami est active uniquement dans l'écran de partage. Retournes-y ou configure ta propre clé.
+                  </p>
+                </div>
               </div>
-            </button>
+            ) : (
+              <button onClick={() => navigate('/settings')}
+                className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 text-left flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-amber-300">Clé API non configurée</p>
+                  <p className="text-xs text-amber-400/70 mt-0.5">Appuyez pour configurer →</p>
+                </div>
+              </button>
+            )
           )}
 
           {!catalog ? (
@@ -1167,10 +1180,16 @@ export function ScanPage() {
                   d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
               </svg>
               <p className="font-medium text-slate-200">Clé API manquante</p>
-              <p className="text-sm text-slate-400">
-                La reconnaissance automatique utilise Claude Vision IA.
-                Configurez votre clé Anthropic dans les paramètres.
-              </p>
+              {hasGuestKey ? (
+                <p className="text-sm text-slate-400 text-center">
+                  La clé IA de ton ami est disponible uniquement dans la vue partagée. Retournes-y ou configure ta propre clé.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  La reconnaissance automatique utilise Claude Vision IA.
+                  Configurez votre clé Anthropic dans les paramètres.
+                </p>
+              )}
               <button onClick={() => navigate('/settings')} className="w-full bg-brand-500 text-white py-3 rounded-2xl font-semibold">
                 Configurer dans Paramètres
               </button>
