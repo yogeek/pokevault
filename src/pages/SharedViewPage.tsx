@@ -436,6 +436,11 @@ function SharedViewContent({
                   candidates={candidates}
                   activeId={scanResult?.card?.id}
                   onPick={checkChosen}
+                  onSearchOther={() => {
+                    setCandidates([])
+                    setScanResult(null)
+                    setSearchMode(true)
+                  }}
                 />
               )}
               {gifts.length > 0 && (
@@ -759,10 +764,11 @@ function scoreColor(score: number): string {
   return 'bg-slate-600/40 text-slate-400'
 }
 
-function CandidateList({ candidates, activeId, onPick }: {
+function CandidateList({ candidates, activeId, onPick, onSearchOther }: {
   candidates: ScoredCard[]
   activeId?: string
   onPick: (card: CatalogCard) => void
+  onSearchOther: () => void
 }) {
   return (
     <div className="mt-3 border border-slate-700 bg-slate-800/60 rounded-2xl p-3">
@@ -788,6 +794,16 @@ function CandidateList({ candidates, activeId, onPick }: {
           </button>
         ))}
       </div>
+      <button
+        onClick={onSearchOther}
+        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl
+                   text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+        </svg>
+        Ce n'est pas ce Pokémon — chercher par nom
+      </button>
     </div>
   )
 }
