@@ -9,6 +9,8 @@ import { getGifts, addGift, removeGift } from '@/lib/gifts'
 import { upsertSharedView } from '@/db/sharing'
 import { recognizeCardWithClaudeScored, DEFAULT_AI_MODEL } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
+import { setCardImage } from '@/db/cardImages'
+import { compressCanvas } from '@/lib/imageCompress'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
 import type { CheckResult, CatalogCard } from '@/types'
 import { Spinner } from '@/components/ui/Spinner'
@@ -180,6 +182,10 @@ function SharedViewContent({
       setCandidates(scored)
       const best = scored[0].card
       setScanResult({ result: checkCard(best.id, snap), card: best })
+      // Auto-save scan image for cards that have no official image
+      if (!best.imageUrl) {
+        setCardImage(best.id, compressCanvas(canvas)).catch(() => {})
+      }
     } catch (e) {
       // Surface the real error (invalid key, API/network failure, timeout)
       // instead of masking it as a generic "card not recognized".

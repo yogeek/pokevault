@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { db } from '@/db'
 import { deleteEntry, updateEntry } from '@/db/inventory'
 import { addToWishlist, removeFromWishlist } from '@/db/wishlist'
+import { getCardImage, setCardImage } from '@/db/cardImages'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
+import { compressDataUrl } from '@/lib/imageCompress'
 import { CardImage } from '@/components/ui/CardImage'
 import { ConditionBadge, PriorityBadge } from '@/components/ui/Badge'
 import { Toast } from '@/components/ui/Toast'
@@ -15,6 +17,7 @@ export function CardDetailPage() {
   const { cardId } = useParams<{ cardId: string }>()
   const navigate = useNavigate()
   const catalog = useCatalogStore(s => s.catalog)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editQty, setEditQty] = useState(1)
@@ -23,6 +26,11 @@ export function CardDetailPage() {
   const [toast, setToast] = useState('')
 
   const card = catalog?.cards.find(c => c.id === cardId)
+
+  const customImage = useLiveQuery(
+    () => cardId ? getCardImage(cardId) : Promise.resolve(null),
+    [cardId],
+  )
 
   const entries = useLiveQuery<InventoryEntry[]>(() =>
     cardId ? db.inventory.where('cardId').equals(cardId).toArray() : Promise.resolve([])
@@ -39,6 +47,22 @@ export function CardDetailPage() {
     setEditingId(entry.id ?? null)
     setEditQty(entry.qty)
     setEditPrice(entry.priceEstimate?.toString() ?? '')
+  }
+
+  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!cardId) return
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    const reader = new FileReader()
+    reader.onload = async ev => {
+      const dataUrl = ev.target?.result as string
+      if (!dataUrl) return
+      const compressed = await compressDataUrl(dataUrl)
+      await setCardImage(cardId, compressed)
+      setToast('Photo enregistrée !')
+    }
+    reader.readAsDataURL(file)
   }
 
   async function saveEdit(id: number) {
@@ -81,12 +105,33 @@ export function CardDetailPage() {
   return (
     <div className="pb-24">
       {/* Hero image */}
+      <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoCapture} />
       <div className="relative bg-gradient-to-b from-slate-800 to-slate-950 px-8 pt-12 pb-4
                       flex flex-col items-center">
         <div className="absolute top-4 left-4">
           <BackButton />
         </div>
-        <CardImage src={card.imageUrl} alt={cardName(card)} className="w-48 shadow-2xl rounded-xl" />
+        <div className="relative">
+          <CardImage
+            src={customImage || card.imageUrl}
+            alt={cardName(card)}
+            className="w-48 shadow-2xl rounded-xl"
+          />
+          {!card.imageUrl && (
+            <button
+              onClick={() => photoInputRef.current?.click()}
+              title={customImage ? 'Remplacer la photo' : 'Ajouter une photo'}
+              className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-brand-500
+                         flex items-center justify-center shadow-lg"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          )}
+        </div>
         {/* Wishlist heart */}
         <button
           onClick={() => inWishlist ? handleRemoveWishlist() : setShowWishlistPicker(true)}

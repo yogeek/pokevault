@@ -4,6 +4,8 @@ import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, searchCards } from '@/lib/catalog'
 import { recognizeCardWithClaudeScored, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
+import { setCardImage } from '@/db/cardImages'
+import { compressCanvas } from '@/lib/imageCompress'
 import { db } from '@/db'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
 import { Spinner } from '@/components/ui/Spinner'
@@ -251,6 +253,10 @@ export function ScanPage() {
       setResultScored(scored)
       setResult(cards)
       setMode('result')
+      // Auto-save scan image for cards that have no official image
+      if (cards[0] && !cards[0].imageUrl) {
+        setCardImage(cards[0].id, compressCanvas(canvas)).catch(() => {})
+      }
       saveScan({ mode: 'result', scanType, result: cards, pageResult: [], preview: currentPreview })
       if (cards.length > 0) {
         const entry: ScanHistoryEntry = { id: crypto.randomUUID(), at: new Date().toISOString(), scanType, result: cards, pageResult: [], pageSelected: [] }

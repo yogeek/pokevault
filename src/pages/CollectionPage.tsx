@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '@/db'
+import { getAllCardImages } from '@/db/cardImages'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, evolutionChain } from '@/lib/catalog'
 import { CardThumbnail } from '@/components/ui/CardThumbnail'
@@ -102,6 +103,8 @@ export function CollectionPage() {
 
   const catalog = useCatalogStore(s => s.catalog)
   const showExportReminder = useExportReminder()
+
+  const customImages = useLiveQuery(() => getAllCardImages(), [], new Map<string, string>())
   const [reminderDismissed, setReminderDismissed] = useState(false)
 
   const inventory = useLiveQuery(() =>
@@ -214,11 +217,11 @@ export function CollectionPage() {
       const card = cardById.get(cardId)
       if (card) {
         map.set(cardId, items.length)
-        items.push({ src: card.imageUrl, alt: cardName(card), id: cardId })
+        items.push({ src: customImages?.get(cardId) || card.imageUrl, alt: cardName(card), id: cardId })
       }
     }
     return [items, map] as const
-  }, [displayedCards, cardById])
+  }, [displayedCards, cardById, customImages])
 
   const totalCards = useMemo(
     () => inventory?.reduce((s, e) => s + e.qty, 0) ?? 0,
@@ -572,7 +575,7 @@ export function CollectionPage() {
                 >
                   <div className={`transition-all duration-150 ${isSelected ? 'scale-95 ring-2 ring-brand-500 rounded-lg' : ''}`}>
                     {card
-                      ? <CardThumbnail card={card} qty={total} />
+                      ? <CardThumbnail card={card} qty={total} customSrc={customImages?.get(cardId)} />
                       : (
                         <div className="aspect-[2.5/3.5] bg-slate-800 rounded-lg
                                         flex items-center justify-center text-[10px] text-slate-500 p-1 text-center">
@@ -595,7 +598,7 @@ export function CollectionPage() {
             return (
               <Link key={cardId} to={`/card/${cardId}`} className="relative">
                 {card
-                  ? <CardThumbnail card={card} qty={total} />
+                  ? <CardThumbnail card={card} qty={total} customSrc={customImages?.get(cardId)} />
                   : (
                     <div className="aspect-[2.5/3.5] bg-slate-800 rounded-lg
                                     flex items-center justify-center text-[10px] text-slate-500 p-1 text-center">
@@ -631,7 +634,7 @@ export function CollectionPage() {
                   </div>
                 )}
                 {card ? (
-                  <CardImage src={card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded"
+                  <CardImage src={customImages?.get(cardId) || card.imageUrl} alt={cardName(card)} className="w-10 h-14 object-cover rounded"
                     list={lbItems} listIndex={lbIdxMap.get(cardId) ?? 0} />
                 ) : (
                   <div className="w-10 h-14 bg-slate-700 rounded flex-shrink-0" />

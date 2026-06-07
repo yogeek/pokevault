@@ -6,10 +6,11 @@ interface Props {
   card: CatalogCard
   qty?: number
   className?: string
+  customSrc?: string
   onClick?: () => void
 }
 
-export function CardThumbnail({ card, qty, className = '', onClick }: Props) {
+export function CardThumbnail({ card, qty, className = '', customSrc, onClick }: Props) {
   return (
     <span
       role="button"
@@ -20,7 +21,7 @@ export function CardThumbnail({ card, qty, className = '', onClick }: Props) {
                   active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 cursor-pointer ${className}`}
     >
       <img
-        src={card.imageUrl}
+        src={customSrc || card.imageUrl}
         alt={cardName(card)}
         loading="lazy"
         className="w-full object-cover aspect-[2.5/3.5]"

@@ -15,6 +15,7 @@ class PokeVaultDB extends Dexie {
   sharedViews!:   EntityTable<SharedView,      'id'>
   settings!:      Dexie.Table<{ key: string; value: unknown }, string>
   meta!:          Dexie.Table<{ key: string; value: unknown }, string>
+  cardImages!:    Dexie.Table<{ cardId: string; dataUrl: string }, string>
 
   constructor() {
     super('pokevault')
@@ -30,6 +31,10 @@ class PokeVaultDB extends Dexie {
       sharedViews:   '++id, ownerName, source, pinnedAt',
       settings:      '&key',
       meta:          '&key',
+    })
+
+    this.version(2).stores({
+      cardImages: '&cardId',
     })
   }
 }
