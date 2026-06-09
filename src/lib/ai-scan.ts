@@ -3,7 +3,9 @@ import type { CatalogData } from './catalog'
 import { searchCards } from './catalog'
 
 const MAX_DIM      = 800
-const MAX_DIM_PAGE = 2000
+// The API downscales images to 1568px on the long edge anyway; sending more
+// only wastes mobile bandwidth.
+const MAX_DIM_PAGE = 1568
 
 function toJpegBase64(canvas: HTMLCanvasElement, maxDim = MAX_DIM): string {
   const { width: w, height: h } = canvas
@@ -16,13 +18,22 @@ function toJpegBase64(canvas: HTMLCanvasElement, maxDim = MAX_DIM): string {
 }
 
 export const AI_MODELS = [
+  { id: 'auto',                      label: 'Auto (économique)', note: 'Haiku, puis Opus si doute · ~0,005 €/scan' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', note: '~0,001 €/scan · rapide' },
   { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6', note: '~0,01 €/scan · précis' },
   { id: 'claude-opus-4-8',           label: 'Opus 4.8',   note: '~0,05 €/scan · très précis' },
 ] as const
 
 export type AiModelId = typeof AI_MODELS[number]['id']
-export const DEFAULT_AI_MODEL: AiModelId = 'claude-opus-4-8'
+// Real API model ids ('auto' resolves to one of these at call time)
+type ConcreteModelId = Exclude<AiModelId, 'auto'>
+export const DEFAULT_AI_MODEL: AiModelId = 'auto'
+
+// Cascade tiers for 'auto': try the cheap model first, escalate to the
+// precise one only when the local match score signals a doubtful read.
+const FAST_MODEL:    ConcreteModelId = 'claude-haiku-4-5-20251001'
+const PRECISE_MODEL: ConcreteModelId = 'claude-opus-4-8'
+const CONFIDENT_SCORE = 80  // exact name + number matched
 
 export interface ScoredCard {
   card: CatalogCard
@@ -105,7 +116,7 @@ export function matchCandidatesFromScan(
 async function fetchCardNameFromClaude(
   canvas: HTMLCanvasElement,
   apiKey: string,
-  model: AiModelId,
+  model: ConcreteModelId,
 ): Promise<{ name: string; rawNumber: string }> {
   const imageData = toJpegBase64(canvas, MAX_DIM)
   const controller = new AbortController()
@@ -133,7 +144,7 @@ async function fetchCardNameFromClaude(
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
-            { type: 'text', text: 'Pokémon TCG card. Give the English Pokémon name and the card number exactly as printed (may have leading zeros, e.g. "014/094"). JSON only: {"name":"Pikachu","number":"058/102"}' },
+            { type: 'text', text: 'Pokémon TCG card. Give the Pokémon name exactly as printed on the card (any language, do NOT translate) and the card number exactly as printed (may have leading zeros, e.g. "014/094"). JSON only: {"name":"Noctali","number":"058/102"}' },
           ],
         }],
       }),
@@ -167,11 +178,13 @@ export async function recognizeCardWithClaude(
   catalog: CatalogData,
   model: AiModelId = DEFAULT_AI_MODEL,
 ): Promise<CatalogCard[]> {
-  const { name, rawNumber } = await fetchCardNameFromClaude(canvas, apiKey, model)
-  return matchCandidates(catalog, name, rawNumber, 5).map(sc => sc.card)
+  const scored = await recognizeCardWithClaudeScored(canvas, apiKey, catalog, model)
+  return scored.map(sc => sc.card)
 }
 
 // Like recognizeCardWithClaude but returns ScoredCard[] and supports excludeIds for retry loops.
+// In 'auto' mode: scan with the fast model first, escalate to the precise model
+// only when the local match score is below the confidence threshold.
 export async function recognizeCardWithClaudeScored(
   canvas: HTMLCanvasElement,
   apiKey: string,
@@ -179,8 +192,17 @@ export async function recognizeCardWithClaudeScored(
   model: AiModelId = DEFAULT_AI_MODEL,
   excludeIds?: Set<string>,
 ): Promise<ScoredCard[]> {
-  const { name, rawNumber } = await fetchCardNameFromClaude(canvas, apiKey, model)
-  return matchCandidates(catalog, name, rawNumber, 5, excludeIds)
+  if (model !== 'auto') {
+    const { name, rawNumber } = await fetchCardNameFromClaude(canvas, apiKey, model)
+    return matchCandidates(catalog, name, rawNumber, 5, excludeIds)
+  }
+  const fast = await fetchCardNameFromClaude(canvas, apiKey, FAST_MODEL)
+  const fastMatch = matchCandidates(catalog, fast.name, fast.rawNumber, 5, excludeIds)
+  if ((fastMatch[0]?.score ?? 0) >= CONFIDENT_SCORE) return fastMatch
+
+  const precise = await fetchCardNameFromClaude(canvas, apiKey, PRECISE_MODEL)
+  const preciseMatch = matchCandidates(catalog, precise.name, precise.rawNumber, 5, excludeIds)
+  return (preciseMatch[0]?.score ?? 0) >= (fastMatch[0]?.score ?? 0) ? preciseMatch : fastMatch
 }
 
 // Returns one ScoredCard[] per detected card (candidates sorted by confidence, best first).
@@ -189,6 +211,30 @@ export async function recognizePageWithClaude(
   apiKey: string,
   catalog: CatalogData,
   model: AiModelId = DEFAULT_AI_MODEL,
+): Promise<ScoredCard[][]> {
+  if (model !== 'auto') return fetchPageDetections(canvas, apiKey, catalog, model)
+  const fast = await fetchPageDetections(canvas, apiKey, catalog, FAST_MODEL)
+  if (pageConfident(fast)) return fast
+  const precise = await fetchPageDetections(canvas, apiKey, catalog, PRECISE_MODEL)
+  // Prefer the read that found more cards; tie-break on total confidence
+  if (precise.length !== fast.length) return precise.length > fast.length ? precise : fast
+  return pageScoreSum(precise) >= pageScoreSum(fast) ? precise : fast
+}
+
+function pageScoreSum(detections: ScoredCard[][]): number {
+  return detections.reduce((s, d) => s + (d[0]?.score ?? 0), 0)
+}
+
+// Confident when every detected card has a strong best match
+function pageConfident(detections: ScoredCard[][]): boolean {
+  return detections.length > 0 && detections.every(d => (d[0]?.score ?? 0) >= CONFIDENT_SCORE)
+}
+
+async function fetchPageDetections(
+  canvas: HTMLCanvasElement,
+  apiKey: string,
+  catalog: CatalogData,
+  model: ConcreteModelId,
 ): Promise<ScoredCard[][]> {
   const imageData = toJpegBase64(canvas, MAX_DIM_PAGE)
   const controller = new AbortController()
@@ -213,7 +259,7 @@ export async function recognizePageWithClaude(
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
-            { type: 'text', text: 'This is a page from a Pokémon TCG binder. Identify every visible card. For each card give the English name and number exactly as printed (preserve leading zeros). Skip cards you cannot read clearly. Return ONLY valid JSON, no explanation: {"cards":[{"name":"Pikachu","number":"058/102"},{"name":"Charizard","number":"004/102"}]}' },
+            { type: 'text', text: 'This is a page from a Pokémon TCG binder. Identify every visible card. For each card give the Pokémon name exactly as printed (any language, do NOT translate) and the number exactly as printed (preserve leading zeros). Skip cards you cannot read clearly. Return ONLY valid JSON, no explanation: {"cards":[{"name":"Noctali","number":"058/102"},{"name":"Dracaufeu","number":"004/102"}]}' },
           ],
         }],
       }),
