@@ -21,6 +21,8 @@ export function SettingsPage() {
   const [importStep, setImportStep] = useState<ImportStep>('idle')
   const [importPreview, setImportPreview] = useState<BackupData | null>(null)
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
+  // Second-step confirmation required when importMode is 'replace'
+  const [confirmReplace, setConfirmReplace] = useState(false)
   const [importError, setImportError] = useState('')
 
   // Backup / restore
@@ -141,6 +143,12 @@ export function SettingsPage() {
 
   async function confirmImport() {
     if (!importPreview) return
+    // Replacing wipes the whole collection: require an explicit second confirmation
+    if (importMode === 'replace' && !confirmReplace) {
+      setConfirmReplace(true)
+      return
+    }
+    setConfirmReplace(false)
     setImportStep('importing')
     try {
       if (importMode === 'replace') {
@@ -300,7 +308,7 @@ export function SettingsPage() {
               {(['merge', 'replace'] as const).map(m => (
                 <button
                   key={m}
-                  onClick={() => setImportMode(m)}
+                  onClick={() => { setImportMode(m); setConfirmReplace(false) }}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition-colors
                     ${importMode === m
                       ? 'border-brand-500 bg-brand-500/10 text-brand-400'
@@ -317,17 +325,42 @@ export function SettingsPage() {
                 </button>
               ))}
             </div>
-            <div className="flex gap-2">
-              <ActionBtn onClick={confirmImport} icon="✅" className="flex-1">
-                Confirmer l'import
-              </ActionBtn>
-              <button
-                onClick={() => { setImportStep('idle'); setImportPreview(null) }}
-                className="flex-1 bg-slate-700 text-slate-300 rounded-xl py-3 text-sm"
-              >
-                Annuler
-              </button>
-            </div>
+            {confirmReplace ? (
+              <div className="space-y-2 border-2 border-red-500/50 bg-red-500/10 rounded-xl p-3">
+                <p className="text-sm font-semibold text-red-300">
+                  Toute la collection actuelle sera effacée.
+                </p>
+                <p className="text-xs text-red-400/80">
+                  Cette action est irréversible. Pensez à exporter avant si nécessaire.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={confirmImport}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl py-3 text-sm"
+                  >
+                    Oui, tout remplacer
+                  </button>
+                  <button
+                    onClick={() => setConfirmReplace(false)}
+                    className="flex-1 bg-slate-700 text-slate-300 rounded-xl py-3 text-sm"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <ActionBtn onClick={confirmImport} icon="✅" className="flex-1">
+                  Confirmer l'import
+                </ActionBtn>
+                <button
+                  onClick={() => { setImportStep('idle'); setImportPreview(null); setConfirmReplace(false) }}
+                  className="flex-1 bg-slate-700 text-slate-300 rounded-xl py-3 text-sm"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
           </div>
         )}
 

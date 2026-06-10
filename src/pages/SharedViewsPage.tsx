@@ -1,19 +1,30 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, Link } from 'react-router-dom'
 import { unpinSharedView } from '@/db/sharing'
 import { useShareStore } from '@/stores/share'
 import { db } from '@/db'
 import { Spinner } from '@/components/ui/Spinner'
+import { Toast } from '@/components/ui/Toast'
+import type { SharedView } from '@/types'
 
 export function SharedViewsPage() {
   const navigate = useNavigate()
   const loadFromJson = useShareStore(s => s.loadFromJson)
 
   const views = useLiveQuery(() => db.sharedViews.orderBy('pinnedAt').reverse().toArray(), [])
+  // Last unpinned view, kept so the toast's Annuler can restore it
+  const [undo, setUndo] = useState<SharedView | null>(null)
 
   function openView(snapshotJson: string) {
     loadFromJson(snapshotJson)
     navigate('/view')
+  }
+
+  function handleUnpin(view: SharedView) {
+    if (view.id == null) return
+    unpinSharedView(view.id)
+    setUndo(view)
   }
 
   return (
@@ -83,9 +94,9 @@ export function SharedViewsPage() {
               </button>
 
               <button
-                onClick={() => view.id != null && unpinSharedView(view.id)}
+                onClick={() => handleUnpin(view)}
                 aria-label="Désépingler"
-                className="p-2 text-slate-500 hover:text-red-400"
+                className="p-3 -m-1 text-slate-500 hover:text-red-400"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -118,6 +129,17 @@ export function SharedViewsPage() {
           + Ouvrir un fichier .pokevault-share
         </button>
       </div>
+
+      {undo && (
+        <Toast
+          message={`Collection de ${undo.ownerName} désépinglée`}
+          onDismiss={() => setUndo(null)}
+          action={{
+            label: 'Annuler',
+            onClick: () => { db.sharedViews.put(undo) },
+          }}
+        />
+      )}
     </div>
   )
 }

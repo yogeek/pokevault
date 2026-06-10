@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { getSetting } from '@/db/settings'
 import { buildSnapshot, getShareUrl, getShareUrlWithKey, QR_MAX_CARDS, SHARE_WARN_THRESHOLD } from '@/lib/share'
 import { Spinner } from '@/components/ui/Spinner'
+import { Toast } from '@/components/ui/Toast'
 import type { ShareSnapshot } from '@/types'
 
 type ShareContent = 'both' | 'inventory' | 'wishlist'
@@ -19,6 +20,7 @@ export function SharePage() {
   const [generating, setGenerating] = useState(false)
   const [cardCount, setCardCount] = useState(0)
   const [hasAiKey, setHasAiKey] = useState(false)
+  const [toast, setToast] = useState('')
 
   useEffect(() => {
     getSetting('aiApiKeyEnc').then(k => {
@@ -66,7 +68,7 @@ export function SharePage() {
       await navigator.share({ title: `Collection de ${ownerName}`, url })
     } else {
       await navigator.clipboard.writeText(url)
-      alert('Lien copié !')
+      setToast('Lien copié !')
     }
   }
 
@@ -74,6 +76,7 @@ export function SharePage() {
 
   return (
     <div className="pb-24 px-4 pt-4 space-y-6">
+      {toast && <Toast message={toast} onDismiss={() => setToast('')} />}
       <h1 className="text-xl font-bold">Partager ma collection</h1>
 
       {!snapshot ? (

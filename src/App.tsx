@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { BottomNav } from '@/components/ui/BottomNav'
 import { useSwUpdate } from '@/hooks/useSwUpdate'
@@ -36,6 +36,27 @@ function UpdateBanner() {
   )
 }
 
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine)
+  useEffect(() => {
+    const goOffline = () => setOffline(true)
+    const goOnline = () => setOffline(false)
+    window.addEventListener('offline', goOffline)
+    window.addEventListener('online', goOnline)
+    return () => {
+      window.removeEventListener('offline', goOffline)
+      window.removeEventListener('online', goOnline)
+    }
+  }, [])
+  if (!offline) return null
+  return (
+    <div className="fixed top-0 inset-x-0 z-[55] bg-slate-800 text-slate-300 text-xs
+                    text-center py-1.5 max-w-lg mx-auto" role="status">
+      📡 Hors ligne : collection disponible, scan et nouvelles images indisponibles
+    </div>
+  )
+}
+
 export default function App() {
   const { load, loading, progress, error, catalog } = useCatalogStore()
   const { pathname } = useLocation()
@@ -58,6 +79,7 @@ export default function App() {
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
       <UpdateBanner />
+      <OfflineBanner />
       {import.meta.env.DEV && catalog && (
         <div className="fixed top-1 right-1 z-50 text-[9px] text-slate-700 px-1 select-none">
           {catalog.cards.length} cartes · {catalog.sets.length} sets

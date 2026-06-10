@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '@/db'
@@ -6,6 +7,7 @@ import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName } from '@/lib/catalog'
 import { PriorityBadge } from '@/components/ui/Badge'
 import { CardImage } from '@/components/ui/CardImage'
+import { Toast } from '@/components/ui/Toast'
 import type { WishlistPriority } from '@/types'
 
 const PRIORITY_LABELS: Record<WishlistPriority, string> = {
@@ -17,6 +19,13 @@ const PRIORITY_LABELS: Record<WishlistPriority, string> = {
 export function WishlistPage() {
   const catalog = useCatalogStore(s => s.catalog)
   const entries = useLiveQuery(() => db.wishlist.orderBy('priority').toArray(), [])
+  // Last removed entry, kept so the toast's Annuler can restore it
+  const [undo, setUndo] = useState<{ cardId: string; priority: WishlistPriority; name: string } | null>(null)
+
+  function handleRemove(cardId: string, priority: WishlistPriority, name: string) {
+    removeFromWishlist(cardId)
+    setUndo({ cardId, priority, name })
+  }
 
   return (
     <div className="pb-24">
@@ -65,7 +74,8 @@ export function WishlistPage() {
                       <select
                         value={entry.priority}
                         onChange={e => entry.id && addToWishlist(entry.cardId, Number(e.target.value) as WishlistPriority)}
-                        className="text-xs bg-slate-800 rounded px-1.5 py-1 focus:outline-none"
+                        className="text-xs bg-slate-800 rounded-lg px-2 py-2 focus:outline-none
+                                   focus:ring-2 focus:ring-brand-500"
                         aria-label="Priorité"
                       >
                         <option value={1}>Indispensable</option>
@@ -73,8 +83,8 @@ export function WishlistPage() {
                         <option value={3}>Sympa</option>
                       </select>
                       <button
-                        onClick={() => removeFromWishlist(entry.cardId)}
-                        className="text-xs text-slate-500 hover:text-red-400"
+                        onClick={() => handleRemove(entry.cardId, entry.priority as WishlistPriority, card ? cardName(card) : entry.cardId)}
+                        className="text-xs text-slate-500 hover:text-red-400 px-2 py-2 -mr-2"
                       >
                         Retirer
                       </button>
@@ -86,6 +96,17 @@ export function WishlistPage() {
           </div>
         )
       })}
+
+      {undo && (
+        <Toast
+          message={`${undo.name} retirée de la wishlist`}
+          onDismiss={() => setUndo(null)}
+          action={{
+            label: 'Annuler',
+            onClick: () => addToWishlist(undo.cardId, undo.priority),
+          }}
+        />
+      )}
     </div>
   )
 }
