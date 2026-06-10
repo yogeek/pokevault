@@ -1,10 +1,11 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useCatalogStore } from '@/stores/catalog'
 import { cardName, cardSetName, searchCards } from '@/lib/catalog'
 import { recognizeCardWithClaudeScored, recognizePageWithClaude, DEFAULT_AI_MODEL, AI_MODELS } from '@/lib/ai-scan'
 import { getSetting } from '@/db/settings'
-import { setCardImage } from '@/db/cardImages'
+import { setCardImage, getAllCardImages } from '@/db/cardImages'
 import { compressCanvas } from '@/lib/imageCompress'
 import { db } from '@/db'
 import type { AiModelId, ScoredCard } from '@/lib/ai-scan'
@@ -140,6 +141,7 @@ export function ScanPage() {
   const hasGuestKey = !!sessionStorage.getItem('pokevault_session_api_key')
   const [aiModel, setAiModel] = useState<AiModelId>(DEFAULT_AI_MODEL)
   const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory)
+  const customImages = useLiveQuery(() => getAllCardImages(), [], new Map<string, string>())
 
   useEffect(() => {
     const reload = () => {
@@ -614,7 +616,7 @@ export function ScanPage() {
                   {dupesConfirm.dupes.map(({ card, existingQty }) => (
                     <div key={card.id} className="flex items-center gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
                       <img
-                        src={card.imageUrl}
+                        src={customImages.get(card.id) || card.imageUrl || '/placeholder-card.svg'}
                         alt={cardName(card)}
                         className="w-7 h-10 object-cover rounded flex-shrink-0"
                         onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
@@ -696,7 +698,7 @@ export function ScanPage() {
                   if (sheetSearchQuery.trim() && items.length === 0) {
                     return <p className="text-center text-slate-500 text-sm py-6">Aucun résultat</p>
                   }
-                  const lbList = items.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id }))
+                  const lbList = items.map(s => ({ src: customImages.get(s.card.id) || s.card.imageUrl || '/placeholder-card.svg', alt: cardName(s.card), id: s.card.id }))
                   return items.map((sc, i) => {
                     const { badge } = scoreColor(sc.score)
                     const isCurrent = !sheetSearchQuery.trim() && i === 0
@@ -711,7 +713,7 @@ export function ScanPage() {
                       >
                         <span className="relative flex-shrink-0 group">
                           <img
-                            src={sc.card.imageUrl}
+                            src={customImages.get(sc.card.id) || sc.card.imageUrl || '/placeholder-card.svg'}
                             alt={cardName(sc.card)}
                             className="w-10 h-14 object-cover rounded"
                             onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
@@ -921,7 +923,7 @@ export function ScanPage() {
                         {previewCards.map((card, i) => (
                           <img
                             key={card!.id}
-                            src={card!.imageUrl}
+                            src={customImages.get(card!.id) || card!.imageUrl || '/placeholder-card.svg'}
                             alt={cardName(card!)}
                             className="w-8 h-11 rounded object-cover border border-slate-900"
                             style={{ zIndex: previewCards.length - i }}
@@ -995,12 +997,12 @@ export function ScanPage() {
           )}
           {(resultScored.length > 0 ? resultScored : result.map(card => ({ card, score: 0 }))).map(({ card, score }, i, arr) => {
             const { badge } = scoreColor(score)
-            const lbList = arr.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id }))
+            const lbList = arr.map(s => ({ src: customImages.get(s.card.id) || s.card.imageUrl || '/placeholder-card.svg', alt: cardName(s.card), id: s.card.id }))
             return (
               <button key={card.id} onClick={() => navigate(`${returnTo}?cardId=${card.id}`, { state: { fromScan: true } })}
                 className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 text-left">
                 <img
-                  src={card.imageUrl} alt={cardName(card)}
+                  src={customImages.get(card.id) || card.imageUrl || '/placeholder-card.svg'} alt={cardName(card)}
                   className="w-12 rounded object-cover active:opacity-70"
                   onClick={e => { e.stopPropagation(); setLightbox({ items: lbList, index: i }) }}
                   onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
@@ -1114,9 +1116,9 @@ export function ScanPage() {
                     className="flex items-center gap-3 flex-1 p-3 pl-1 text-left min-w-0"
                   >
                     <img
-                      src={card.imageUrl} alt={cardName(card)}
+                      src={customImages.get(card.id) || card.imageUrl || '/placeholder-card.svg'} alt={cardName(card)}
                       className="w-10 h-14 object-cover rounded flex-shrink-0"
-                      onClick={e => { e.stopPropagation(); setLightbox({ items: candidates.map(s => ({ src: s.card.imageUrl, alt: cardName(s.card), id: s.card.id })), index: 0 }) }}
+                      onClick={e => { e.stopPropagation(); setLightbox({ items: candidates.map(s => ({ src: customImages.get(s.card.id) || s.card.imageUrl || '/placeholder-card.svg', alt: cardName(s.card), id: s.card.id })), index: 0 }) }}
                       onError={e => { (e.target as HTMLImageElement).src = '/placeholder-card.svg' }}
                     />
                     <div className="flex-1 min-w-0">
